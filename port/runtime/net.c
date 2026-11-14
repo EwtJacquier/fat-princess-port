@@ -19,10 +19,10 @@
 #include "platform.h"
 #include "rt.h"
 
-#define PEER_MAX 16
+#define PEER_MAX 32  // the others on the air: a 16-person match has 15, a room may hold more
 #define SOCK_MAX 8
 #define PDP_MAX 2048
-#define QUEUE_MAX 128
+#define QUEUE_MAX 512  // received, not read yet: a 16-person match's host gets ~150 a second
 #define HANDLER_MAX 4
 
 #define ERR_WOULD_BLOCK 0x80410709u

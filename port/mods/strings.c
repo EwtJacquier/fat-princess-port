@@ -26,6 +26,7 @@ typedef struct {
 	const char *orig;   // the English text
 	const char *text;   // ours
 	uint32_t addr;      // our copy (UTF-16) in guest memory
+	bool players;       // the players mod's (mods/players.c), not the menu mod's
 } Rename;
 
 static Rename renames[] = {
@@ -39,7 +40,14 @@ static Rename renames[] = {
 	{0x8fb39f9bu, "How To Play!", "How To Play", 0},                      // str:confused
 	{0x7de8fd8bu, "WHO'S YOUR DADDY?", "CREDITS", 0},                     // str:option_credits_button
 	{0x7d97bd39u, "CONTROL FREAKS", "HOST A GAME", 0},                    // str:control_freaks
+	// players mod: an Ad Hoc match takes as many people as it has places
+	{0x0214efd0u, "10 PLAYERS (8 HUMANS)", "10 PLAYERS", 0, true},        // str:player_10_8h
+	{0xa81d275bu, "12 PLAYERS (8 HUMANS)", "12 PLAYERS", 0, true},        // str:player_12_8h
+	{0x8d767887u, "14 PLAYERS (8 HUMANS)", "14 PLAYERS", 0, true},        // str:player_14_8h
+	{0x277fb00cu, "16 PLAYERS (8 HUMANS)", "16 PLAYERS", 0, true},        // str:player_16_8h
 };
+
+bool mod_players_on(void);  // mods/players.c
 
 static bool enabled(void) {
 	static int on = -1;
@@ -88,11 +96,11 @@ static uint32_t our_copy(Rename *r) {
 void f_089fdb34(CPU *c) {
 	uint32_t hash = c->r[5];
 	f_089fdb34_orig(c);
-	if (!c->r[2] || !enabled()) return;
+	if (!c->r[2]) return;
 	for (size_t i = 0; i < sizeof renames / sizeof *renames; i++) {
 		Rename *r = &renames[i];
 		if (r->hash != hash) continue;
-		if (same_text(c->r[2], r->orig)) {
+		if ((r->players ? mod_players_on() : enabled()) && same_text(c->r[2], r->orig)) {
 			uint32_t a = our_copy(r);
 			if (a) c->r[2] = a;
 		}

@@ -52,18 +52,21 @@ browser tab, and to storm each other's castles again.
   textures, how the original textures are filtered.
 - **Players**: each player logs in and keeps their own save; their name is their name online.
 - **Online matches** through the game's **Ad Hoc** mode: one player hosts, the others join.
-  **Up to 8 people** per match (the game's own limit: matches of up to 16 characters, "16 PLAYERS
-  (8 HUMANS)", bots fill the other places). There is no game server: see
+  **Up to 16 people** per match (the original game stopped at 8: "16 PLAYERS (8 HUMANS)"; the
+  players mod lifts it), bots fill the places nobody takes. There is no game server: see
   [Online play](#online-play-ad-hoc-only-no-game-server).
 - **Mods** (C code in `port/mods/`, each can be turned off):
   - straight to the title: no logos, no notices; the save loads by itself (or is made, the first
     time) and autosave stays on; Start on the title accepts the online agreement; the game's tips
-    start off on every boot (Settings turns them on);
+    (the hint balloons during a match too) start off on every boot (Settings turns them on);
   - clearer menus: **PLAY OFFLINE** / **PLAY ONLINE** / **CUSTOMIZE** (no LOAD GAME: the save is
     already loaded); STORY MODE / CASUAL MODE / ARENA MODE; CHANGE LOOK / SETTINGS / HOW TO PLAY /
     CREDITS; PLAY ONLINE goes straight to the Ad Hoc menu: **HOST A GAME** / **FIND A GAME**;
     options changed with left and right show it: `< GAME TIPS OFF >`; the analog stick moves through the
     menus too; no copyright line under them;
+  - **16 people online**: a match of 10 to 16 places takes that many people, not 8 (the host also
+    lets those joining in one a second instead of one every 5 seconds, so a crowd arriving
+    together all gets in); the size options read `< 16 PLAYERS >`;
   - smooth motion: the game's clock steps exactly with the frames on the screen (see
     [Things to know](#things-to-know)).
 
@@ -267,10 +270,11 @@ No copy of the original textures is needed for that: they always come from your 
 lobby, its countdown, bots for the empty places); the others open **PLAY ONLINE → FIND A GAME**
 and join it.
 
-**How many**: up to **8 people** per match. That is the game's own rule for Ad Hoc: the host picks
-a match of 2 to 16 characters, and above 8 the menu says it, "16 PLAYERS (8 HUMANS)": bots take
-the other places. (The PlayStation Network mode allowed even fewer people in big matches: "16
-PLAYERS (4 HUMANS)".)
+**How many**: up to **16 people** per match. The host picks a match of 2 to 16 places; people take
+them as they join and bots take the rest. The original game stopped at 8 people ("16 PLAYERS (8
+HUMANS)"; its PlayStation Network mode at 4 to 6 in big matches); the players mod lifts that (with
+`FP_MOD_PLAYERS=0` the game keeps its 8). Tested with 16 copies of the game, all of them in the
+same match. The host's game sends the most: a few KB per second per player.
 
 **What doesn't**: there is **no game server** anywhere. The game's *Infrastructure* mode (matches
 through the PlayStation Network) needed Sony's servers, which are gone; the menu mod goes straight
@@ -400,7 +404,7 @@ There is no database server: everything is plain files in your `port/build/` fol
 - **Sound** starts after the first click or key press (browsers' rule).
 - **Saves** are the game's own files: the native build and the browser build share the main one.
 - **Switches** (environment variables natively, `?NAME=value` in the browser's address):
-  `FP_MOD_BOOT=0` and `FP_MOD_MENU=0` turn the mods off, `FP_FRAME_CLOCK=0` gives the game the
+  `FP_MOD_BOOT=0`, `FP_MOD_MENU=0` and `FP_MOD_PLAYERS=0` turn the mods off, `FP_FRAME_CLOCK=0` gives the game the
   real clock again, `FP_SCALE=1..4` sets the render scale, `FP_FPS=1` logs the frame rate.
 - Something wrong? In the browser, **F9** writes a diagnostic of the current frame into
   `build/webdump/` on the host (only from the host's own browser). The browser's console (F12)

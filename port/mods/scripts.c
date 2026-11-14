@@ -17,6 +17,8 @@
 //  - the PLAY ONLINE menu: FIND A GAME and HOST A GAME (no JUMP IN!);
 //  - options changed with left/right show their value as "< VALUE >";
 //  - no copyright line under the menus.
+// Players (FP_MOD_PLAYERS=0 keeps the original; the rest is mods/players.c):
+//  - an Ad Hoc match takes as many people as it has places (up to 16), not 8.
 //
 // FUN_08a8963c finishes loading an image: when it says yes, *(this + 0x14) is the "MLSC" block in
 // memory (u32 size at +4); the patches' offsets count from there (the file offset minus 8).
@@ -26,7 +28,7 @@
 #include "funcs.h"
 #include "rt.h"
 
-enum { BOOT, MENU };
+enum { BOOT, MENU, PLAYERS };
 
 typedef struct {
 	int mod;
@@ -77,12 +79,15 @@ static const Patch patches[] = {
 	{MENU, "menu_fp_vmenu", 0x2959, 3, "\xb3\x00\xa3", "\xb3\x00\xc4"},
 	{MENU, "menu_fp_vmenu", 0x2a8c, 3, "\xb3\x00\xa3", "\xb3\x00\xc4"},
 	{MENU, "menu_fp_vmenu", 0x2b90, 3, "\xb3\x00\xa3", "\xb3\x00\xc4"},
+	// menu_server_settings StartServer, Ad Hoc: num_humans = 8 (above 8 places) -> = max_players
+	{PLAYERS, "menu_server_settings", 0x06e5, 8, "\x96\x03\x96\x24\x96\x08\x54\x4d", "\x96\x03\x96\x24\x14\x02\x54\x4d"},
 };
 
 static bool mod_on(int mod) {
-	static int on[2] = {-1, -1};
+	static const char *const env[] = {"FP_MOD_BOOT", "FP_MOD_MENU", "FP_MOD_PLAYERS"};
+	static int on[3] = {-1, -1, -1};
 	if (on[mod] < 0) {
-		const char *e = getenv(mod == BOOT ? "FP_MOD_BOOT" : "FP_MOD_MENU");
+		const char *e = getenv(env[mod]);
 		on[mod] = !e || atoi(e) != 0;
 	}
 	return on[mod];
@@ -119,7 +124,7 @@ void f_08a8963c(CPU *c) {
 		if (!match || p->at + p->len > size) continue;
 		if (memcmp(img + p->at, p->old, p->len) == 0) {
 			memcpy(img + p->at, p->new, p->len);
-			rt_log("mod: %s.csl patched at 0x%x (%s)", p->script, p->at, p->mod == BOOT ? "boot" : "menu");
+			rt_log("mod: %s.csl patched at 0x%x (%s)", p->script, p->at, p->mod == BOOT ? "boot" : p->mod == MENU ? "menu" : "players");
 		} else if (memcmp(img + p->at, p->new, p->len) != 0) {
 			rt_log("mod: %s.csl at 0x%x is not the expected code; left alone", p->script, p->at);
 		}

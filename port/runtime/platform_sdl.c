@@ -166,10 +166,10 @@ void plat_audio_push(const int16_t *s, int n) {
 }
 
 // Ad hoc transport: UDP datagrams on 127.0.0.1 between copies of the game on this machine. Each
-// copy binds the first free port of NET_PORT0..+15 and sends every message to all of them; the
+// copy binds the first free port of NET_PORT0..+31 and sends every message to all of them; the
 // header names sender and receiver (all FF: everyone), so the others drop what isn't theirs.
 #define NET_PORT0 47380
-#define NET_NODES 16
+#define NET_NODES 32  // copies on this machine (a 16-person match and spare)
 static int net_fd = -1;
 static bool net_tried;
 static uint8_t net_mac[6];

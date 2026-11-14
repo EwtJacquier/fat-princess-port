@@ -64,6 +64,18 @@ Network:
   most 8 humans, bots fill the rest. Infrastructure: "10/12 PLAYERS (6 HUMANS)", "14/16 PLAYERS
   (4 HUMANS)". NetGame.StartServer{mode, map, max_players = the option, num_humans}. Unused texts
   "10 PLAYERS" ... "16 PLAYERS" (no human cap) exist too.
+- 16 people (mods/players.c, FP_MOD_PLAYERS): the 8 was only (1) the script's num_humans =
+  min(max_players, 8) and FUN_0890872c's clamp to 8, kept at *(0x08b09920)+0xac and compared by
+  the host's join handler FUN_08909558 (message 0x10; refusal 0x12 "full"), and (2) the host's two
+  join queues (24 places each: DAT_08bd1d80 -> FUN_0890c778 sends the room, ~4 KB = 16 players x
+  0xec; DAT_08bd1d20 -> FUN_0890cbf0 the level's state) each worked once every 5 s (DAT_08afbbe8 /
+  DAT_08afbbe0 = now + 5000): a joiner waits ~30 s on its "joining" screen, then goes back to the
+  search ("GAME NOT FOUND"), so in a crowd only ~7 got in, as if the cap were still 8. The match
+  itself has 16 places (the player manager, 0x150b0 bytes, holds 16 records of 0x1500; people take
+  the bots' places), the connections are lists, the lobby shows 2 x 8. In the match everyone
+  connects to everyone (the lobby is a star around the host). Tested: 16 native copies, host + 15
+  joining within 10 s, all in the match. Native test harness: NET_NODES 32 (UDP ports), net.c
+  PEER_MAX 32, QUEUE_MAX 512.
 - Modes: Rescue the Princess, Snatch 'n Grab, Team Deathmatch, Invasion, plus PSP-only Jailbreak,
   Demolition, Grim Reaper, Queen's Rule (names vary by source); story "Legend of the Fat Princess"
   (7 chapters). Classes come from hats (worker, warrior, ranger, mage, priest...).
@@ -152,7 +164,11 @@ Network:
   options changed with left/right shown as "< VALUE >": the vmenu (menu_fp_vmenu.csl) asks for their
   text as "_mid" .. name instead of "str:" .. name; strings.c's hook of the text manager
   (FUN_089fe1d4) finds the "str:" id again from the CRC (same bytes after another start: the
-  difference only depends on the name's length, 1 to 64 tried) and returns "< TEXT >". save.c: a boot without a save makes one (what util.AutoSave does). strings.c: the
+  difference only depends on the name's length, 1 to 64 tried) and returns "< TEXT >". save.c: a boot without a save makes one (what util.AutoSave does). tips.c: the tips
+  off at every boot. The setting's bit (settings object *DAT_08afb5b8, bit 1) is only the menu's
+  copy: the balloons during a match (FUN_0882f228 queues one, once per save, FUN_08832cc8 shows it)
+  read the save's table of values (*DAT_08b08f08, flag 0x2d0040e1), which LoadGameSettings
+  (FUN_088f1730) reads and SaveGameSettings (FUN_088f1590) writes: both cleared. strings.c: the
   menus' new names (English tables only). FP_MOD_BOOT=0 / FP_MOD_MENU=0 keep the original.
 - Headless tests with the mods: title at frame ~270; "400:start" -> main menu; "500:cross" PLAY
   OFFLINE (STORY / CASUAL / ARENA MODE); casual match: "400:start,500:cross,600:down,660:cross,

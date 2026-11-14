@@ -7,3 +7,6 @@
 088f23dc  # game_settings_man.LoadGameSettings -> mods/tips.c (boot mod: tips off on every boot)
 08977864  # renderer begin frame: waits for the frame before to be set on the screen -> mods/frameclock.c
 089bc4dc  # the game's frame clock tick (reads the ms clock, adds the step) -> mods/frameclock.c (its time follows the frames on the screen)
+0890872c  # NetGame start hosting (mode, map, max_players, num_humans; clamps humans to 8) -> mods/players.c (players mod: up to 16 people)
+0890c778  # NetGame host: sends the next queued joiner the room (then waits 5 s) -> mods/players.c (players mod: 1 s)
+0890cbf0  # NetGame host: sends the next queued joiner the level's state (then waits 5 s) -> mods/players.c (players mod: 1 s)
