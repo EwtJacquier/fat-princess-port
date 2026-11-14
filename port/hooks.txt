@@ -1,0 +1,9 @@
+# Guest functions replaced by hand-written C in mods/*.c (the original stays callable as f_X_orig).
+08a8963c  # CSL script image loaded -> mods/scripts.c (boot and menu mods patch the scripts)
+089fdb34  # string table lookup by hash -> mods/strings.c (menu mod: the options' new names)
+089257d0  # util.HandleAutoLoadResult (the boot load's result) -> mods/save.c (boot mod: makes the save when there is none)
+089fe1d4  # text manager: a text by its id's hash -> mods/strings.c (menu mod: left/right options as "< VALUE >")
+08981964  # input: is a logical button repeating (only the menus' input asks) -> mods/menupad.c (menu mod: the analog stick moves through menus)
+088f23dc  # game_settings_man.LoadGameSettings -> mods/tips.c (boot mod: tips off on every boot)
+08977864  # renderer begin frame: waits for the frame before to be set on the screen -> mods/frameclock.c
+089bc4dc  # the game's frame clock tick (reads the ms clock, adds the step) -> mods/frameclock.c (its time follows the frames on the screen)
