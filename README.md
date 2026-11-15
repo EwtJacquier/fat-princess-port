@@ -41,9 +41,10 @@ browser tab, and to storm each other's castles again.
   music and voices.
 - **4x internal resolution** (1920x1088) at a smooth 60 frames per second: the camera follows the
   running princess-snatchers without a jolt.
-- **HD textures**: every one of the game's 1,245 textures was remade with the
-  [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) anime model at 4x, and each one was checked
-  against its original. The game's lettering is redrawn sharp: its glyph pages were cut out again
+- **HD textures**: every one of the game's 1,245 textures was remade at 4x, most with the
+  [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) anime model; the menu art, icons, the HUD
+  hearts and others where that fell short were redrawn with OpenAI's image models. Each one was
+  checked against its original. The game's lettering is redrawn sharp: its glyph pages were cut out again
   with clean edges at 4x, so menus, tips and the HUD keep the game's own fonts at any resolution.
   They come as a separate download and never change the game's files: turn them off and on in the
   settings menu.
@@ -118,7 +119,7 @@ network traffic.
 | **FFmpeg** (PPSSPP's builds) | ATRAC3+ music and voices |
 | **LiveKit** (WebRTC) | online play: the game's Ad Hoc messages between players |
 | **Ghidra** (optional) | the analysis that found every function (already done: `re/export/`) |
-| **Real-ESRGAN** | how the HD textures were made (`realesrgan-x4plus-anime`, 4x) |
+| **Real-ESRGAN**, **OpenAI image models** | how the HD textures were made (`realesrgan-x4plus-anime` at 4x; `gpt-image` redraws) |
 
 ## What you need
 
@@ -251,10 +252,12 @@ python3 tools/textures.py install ~/Downloads/fatprincess-hd-textures*.zip
 python3 tools/textures.py status
 ```
 
-Every texture of the game was upscaled 4x with Real-ESRGAN's anime model
-(`realesrgan-x4plus-anime`) and compared with its original; broken results were made again. The
-font pages were redone with clean edges instead (an AI upscale blurs thin letters): the lettering
-stays the game's own, sharp. The pack only **adds** files in `build/textures`: the game looks each
+Every texture of the game was upscaled 4x and compared with its original. Most (1,081) come from
+Real-ESRGAN's anime model (`realesrgan-x4plus-anime`); 162 (menu art, icons, the HUD hearts and
+others where the plain upscale fell short) were redrawn with OpenAI's image models (`gpt-image`),
+fitted back onto the original's place and outline and reviewed one by one. The font pages were
+redone with clean edges instead (an AI upscale blurs thin letters): the lettering stays the game's
+own, sharp. The pack only **adds** files in `build/textures`: the game looks each
 texture up while it runs and draws the HD version in its place, so your ISO and the game's files
 never change.
 
