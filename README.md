@@ -67,6 +67,8 @@ browser tab, and to storm each other's castles again.
   - **16 people online**: a match of 10 to 16 places takes that many people, not 8 (the host also
     lets those joining in one a second instead of one every 5 seconds, so a crowd arriving
     together all gets in); the size options read `< 16 PLAYERS >`;
+  - **steadier online**: a player whose messages stop arriving is dropped after 15 seconds of
+    silence, not 4 (a connection that hiccups and comes back stays in the match);
   - smooth motion: the game's clock steps exactly with the frames on the screen (see
     [Things to know](#things-to-know)).
 
@@ -274,7 +276,10 @@ and join it.
 them as they join and bots take the rest. The original game stopped at 8 people ("16 PLAYERS (8
 HUMANS)"; its PlayStation Network mode at 4 to 6 in big matches); the players mod lifts that (with
 `FP_MOD_PLAYERS=0` the game keeps its 8). Tested with 16 copies of the game, all of them in the
-same match. The host's game sends the most: a few KB per second per player.
+same match. The host's game sends the most: a few KB per second per player. A player with a poor
+connection no longer slows everyone else down: tested with four players, one of them on a very
+bad link (a quarter of a second late, 10% of the messages lost), and every game held 60 frames a
+second.
 
 **What doesn't**: there is **no game server** anywhere. The game's *Infrastructure* mode (matches
 through the PlayStation Network) needed Sony's servers, which are gone; the menu mod goes straight
@@ -404,7 +409,7 @@ There is no database server: everything is plain files in your `port/build/` fol
 - **Sound** starts after the first click or key press (browsers' rule).
 - **Saves** are the game's own files: the native build and the browser build share the main one.
 - **Switches** (environment variables natively, `?NAME=value` in the browser's address):
-  `FP_MOD_BOOT=0`, `FP_MOD_MENU=0` and `FP_MOD_PLAYERS=0` turn the mods off, `FP_FRAME_CLOCK=0` gives the game the
+  `FP_MOD_BOOT=0`, `FP_MOD_MENU=0`, `FP_MOD_PLAYERS=0` and `FP_MOD_ONLINE=0` turn the mods off, `FP_FRAME_CLOCK=0` gives the game the
   real clock again, `FP_SCALE=1..4` sets the render scale, `FP_FPS=1` logs the frame rate.
 - Something wrong? In the browser, **F9** writes a diagnostic of the current frame into
   `build/webdump/` on the host (only from the host's own browser). The browser's console (F12)

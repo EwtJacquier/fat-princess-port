@@ -6,6 +6,7 @@
 #include <netinet/in.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -171,6 +172,7 @@ void plat_audio_push(const int16_t *s, int n) {
 #define NET_PORT0 47380
 #define NET_NODES 32  // copies on this machine (a 16-person match and spare)
 static int net_fd = -1;
+static bool net_outage(void);
 static bool net_tried;
 static uint8_t net_mac[6];
 
@@ -217,6 +219,30 @@ void plat_net_stop(void) {
 
 int plat_net_state(void) { return net_fd >= 0 ? NET_UP : net_tried ? NET_FAILED : NET_OFF; }
 
+typedef struct {
+	uint64_t at;
+	int n;
+	uint8_t pkt[13 + 4096];
+} Delayed;
+
+// Tests: this copy's own way out, as bad as FP_NET_UP_DELAY / FP_NET_UP_JITTER (ms) and
+// FP_NET_UP_LOSS (percent) make it (a player with a poor connection: give it the FP_NET_* too).
+static Delayed *uq[1024];
+static int uq_n;
+static int up_delay = -1, up_jitter, up_loss;
+static void net_flush_sends(void) {
+	uint64_t now = rt_now_us();
+	for (int i = 0; i < uq_n;) {
+		if (uq[i]->at > now) {
+			i++;
+			continue;
+		}
+		net_sendto_all(uq[i]->pkt, (size_t)uq[i]->n);
+		free(uq[i]);
+		uq[i] = uq[--uq_n];
+	}
+}
+
 void plat_net_send(const uint8_t *to_mac, const void *data, int len) {
 	uint8_t pkt[13 + 4096];
 	if (net_fd < 0 || len < 0 || len > 4096) return;
@@ -225,19 +251,108 @@ void plat_net_send(const uint8_t *to_mac, const void *data, int len) {
 	else memset(pkt + 6, 0xff, 6);
 	pkt[12] = 'M';
 	memcpy(pkt + 13, data, (size_t)len);
-	net_sendto_all(pkt, 13 + (size_t)len);
+	if (up_delay < 0) {
+		up_delay = getenv("FP_NET_UP_DELAY") ? atoi(getenv("FP_NET_UP_DELAY")) : 0;
+		up_jitter = getenv("FP_NET_UP_JITTER") ? atoi(getenv("FP_NET_UP_JITTER")) : 0;
+		up_loss = getenv("FP_NET_UP_LOSS") ? atoi(getenv("FP_NET_UP_LOSS")) : 0;
+	}
+	if (net_outage()) return;
+	if (!up_delay && !up_jitter && !up_loss) {
+		net_sendto_all(pkt, 13 + (size_t)len);
+		return;
+	}
+	static uint64_t last_ordered;
+	bool lossy = len >= 1 && len <= 1200 && ((const uint8_t *)data)[0] == 'D';
+	if (lossy && up_loss && rand() % 100 < up_loss) return;
+	net_flush_sends();
+	if (uq_n >= 1024) return;
+	Delayed *d = malloc(sizeof *d);
+	d->at = rt_now_us() + (uint64_t)up_delay * 1000 + (up_jitter ? (uint64_t)(rand() % (up_jitter * 1000 + 1)) : 0);
+	if (!lossy) {
+		if (d->at < last_ordered) d->at = last_ordered;
+		last_ordered = d->at;
+	}
+	d->n = 13 + len;
+	memcpy(d->pkt, pkt, (size_t)d->n);
+	uq[uq_n++] = d;
+}
+
+// Tests: the internet's way, on arrival (FP_NET_DELAY=ms, FP_NET_JITTER=ms of extra delay at random,
+// FP_NET_LOSS=percent). As over LiveKit, the game's own datagrams (lossy: 'D', up to 1200 bytes) may be
+// lost and overtake each other; everything else keeps its order and always arrives.
+static Delayed *dq[1024];
+static int dq_n;
+// FP_NET_OUTAGE=from:seconds (tests): nothing comes or goes for that long, from that many seconds
+// after the start (a connection that stops a moment).
+static bool net_outage(void) {
+	static double from = -1, len;
+	if (from < 0) {
+		const char *e = getenv("FP_NET_OUTAGE");
+		from = 1e18, len = 0;
+		if (e) sscanf(e, "%lf:%lf", &from, &len);
+	}
+	double t = rt_now_us() / 1e6;
+	static bool said;
+	bool out = t >= from && t < from + len;
+	if (out && !said) said = true, rt_log("net: outage for %.0f s", len);
+	return out;
+}
+static int net_recv_raw(uint8_t *pkt, int cap) {
+	ssize_t n;
+	while (net_fd >= 0 && (n = recv(net_fd, pkt, (size_t)cap, 0)) >= 0) {
+		if (net_outage()) continue;
+		return (int)n;
+	}
+	return -1;
+}
+static int net_recv_emulated(uint8_t *pkt, int cap) {
+	static int delay = -1, jitter, loss;
+	static uint64_t last_ordered;
+	if (delay < 0) {
+		delay = getenv("FP_NET_DELAY") ? atoi(getenv("FP_NET_DELAY")) : 0;
+		jitter = getenv("FP_NET_JITTER") ? atoi(getenv("FP_NET_JITTER")) : 0;
+		loss = getenv("FP_NET_LOSS") ? atoi(getenv("FP_NET_LOSS")) : 0;
+		if (delay || jitter || loss) rt_log("net: emulating %d ms + up to %d ms, %d%% lost", delay, jitter, loss);
+	}
+	if (!delay && !jitter && !loss) return net_recv_raw(pkt, cap);
+	uint64_t now = rt_now_us();
+	int n;
+	while (dq_n < 1024 && (n = net_recv_raw(pkt, cap)) >= 0) {
+		bool lossy = n >= 14 && n <= 13 + 1200 && pkt[12] == 'M' && pkt[13] == 'D';
+		if (lossy && loss && rand() % 100 < loss) continue;
+		Delayed *d = malloc(sizeof *d);
+		d->at = now + (uint64_t)delay * 1000 + (jitter ? (uint64_t)(rand() % (jitter * 1000 + 1)) : 0);
+		if (!lossy) {  // in order
+			if (d->at < last_ordered) d->at = last_ordered;
+			last_ordered = d->at;
+		}
+		d->n = n;
+		memcpy(d->pkt, pkt, (size_t)n);
+		dq[dq_n++] = d;
+	}
+	int best = -1;
+	for (int i = 0; i < dq_n; i++)
+		if (dq[i]->at <= now && (best < 0 || dq[i]->at < dq[best]->at)) best = i;
+	if (best < 0) return -1;
+	Delayed *d = dq[best];
+	n = d->n < cap ? d->n : cap;
+	memcpy(pkt, d->pkt, (size_t)n);
+	free(d);
+	dq[best] = dq[--dq_n];
+	return n;
 }
 
 int plat_net_recv(uint8_t from[6], void *buf, int cap) {
 	static const uint8_t all[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-	uint8_t pkt[13 + 4096];
-	ssize_t n;
-	while (net_fd >= 0 && (n = recv(net_fd, pkt, sizeof pkt, 0)) >= 0) {
+	static uint8_t pkt[13 + 4096];
+	int n;
+	if (uq_n) net_flush_sends();
+	while ((n = net_recv_emulated(pkt, sizeof pkt)) >= 0) {
 		if (n < 13 || !memcmp(pkt, net_mac, 6)) continue;
 		if (memcmp(pkt + 6, all, 6) && memcmp(pkt + 6, net_mac, 6)) continue;
 		memcpy(from, pkt, 6);
 		if (pkt[12] == 'B') return -1;
-		int len = (int)n - 13 < cap ? (int)n - 13 : cap;
+		int len = n - 13 < cap ? n - 13 : cap;
 		memcpy(buf, pkt + 13, (size_t)len);
 		return len;
 	}

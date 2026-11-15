@@ -43,7 +43,7 @@
 
 enum { MSG_HELLO = 'H', MSG_PROBE = 'P', MSG_DATA = 'D', MSG_MOD = 'X' };
 #define HELLO_SIZE 138  // type, flags (1 answer me, 2 in a group), group[8], nickname[128]
-#define DATA_HEAD 14    // type, 0, source port, destination port (u16 LE), group[8]
+#define DATA_HEAD 20    // type, 0, source port, destination port (u16 LE), group[8], sequence (u16 LE), sent at (ms, u32 LE)
 #define MOD_HEAD 10     // type, kind, group[8]: the mods' own messages (net_mod_send)
 #define MOD_MAX 512
 #define MOD_QUEUE 256  // a copy held back a while gets several players' shots, results and turns at once
@@ -54,6 +54,15 @@ typedef struct {
 	char group[8];
 	char nick[128];
 	uint64_t taken_at;  // when its last datagram was taken: vblank + 1, or a receive round (0: none yet)
+	uint16_t send_seq;  // the next DATA to it
+	bool have_seq;
+	uint16_t last_seq;  // the latest DATA from it (in sequence)
+	// FP_NETSTATS, since the last report: its DATA received, lost on the way (gaps), come late (after
+	// a later one), and the delay on top of the shortest seen (ms: the network's jitter)
+	uint32_t st_in, st_lost, st_late, st_jit_n, st_jit_max;
+	uint64_t st_jit_sum;
+	int64_t base_delay;  // the shortest (arrival - sent at) seen: the two clocks' offset plus the way's least time
+	bool have_base;
 } Peer;
 
 typedef struct {
@@ -147,6 +156,14 @@ static void netstats_tick(void) {
 	rt_log("netstats: out %.1f msg/s %.0f B/s, in %.1f msg/s %.0f B/s (broadcasts %.1f/s, unicasts %.1f/s, largest %d B)",
 	       ns.out_msgs / secs, ns.out_bytes / secs, ns.in_msgs / secs, ns.in_bytes / secs, ns.bcast / secs,
 	       ns.unicast / secs, ns.max_len);
+	for (int i = 0; i < PEER_MAX; i++) {
+		Peer *p = &peers[i];
+		if (!p->used || !p->st_in) continue;
+		rt_log("netstats:   from %s (%s): %u in, %u lost, %u late; delay over the shortest: mean %.1f ms, max %u ms",
+		       mac_str(p->mac), p->nick, p->st_in, p->st_lost, p->st_late,
+		       p->st_jit_n ? (double)p->st_jit_sum / p->st_jit_n : 0.0, p->st_jit_max);
+		p->st_in = p->st_lost = p->st_late = p->st_jit_n = p->st_jit_max = 0, p->st_jit_sum = 0;
+	}
 	memset(&ns, 0, sizeof ns);
 	ns.t0 = now;
 }
@@ -188,6 +205,24 @@ static void on_hello(const uint8_t *from, const uint8_t *m) {
 
 static void on_data(const uint8_t *from, const uint8_t *m, int n) {
 	if (!in_group || memcmp(m + 6, group, 8)) return;
+	Peer *pf = memcmp(from, my_mac(), 6) ? peer_find(from) : NULL;
+	if (pf) {
+		uint16_t seq = (uint16_t)(m[14] | m[15] << 8);
+		uint32_t sent = (uint32_t)m[16] | (uint32_t)m[17] << 8 | (uint32_t)m[18] << 16 | (uint32_t)m[19] << 24;
+		int16_t ahead = (int16_t)(seq - pf->last_seq);
+		pf->st_in++;
+		if (!pf->have_seq || ahead > 0) {
+			if (pf->have_seq && ahead > 1) pf->st_lost += (uint32_t)(ahead - 1);
+			pf->last_seq = seq, pf->have_seq = true;
+		} else {
+			pf->st_late++;
+		}
+		int64_t d = (int64_t)(uint32_t)(rt_now_us() / 1000) - (int64_t)sent;
+		if (!pf->have_base || d < pf->base_delay) pf->base_delay = d, pf->have_base = true;
+		uint32_t j = (uint32_t)(d - pf->base_delay);
+		pf->st_jit_sum += j, pf->st_jit_n++;
+		if (j > pf->st_jit_max) pf->st_jit_max = j;
+	}
 	if (n - DATA_HEAD > PDP_MAX) n = DATA_HEAD + PDP_MAX;
 	uint16_t sport = (uint16_t)(m[2] | m[3] << 8), dport = (uint16_t)(m[4] | m[5] << 8);
 	bool bound = false;
@@ -503,6 +538,9 @@ void hle_sceNetAdhocPdpSend(CPU *c) {
 	m[2] = (uint8_t)sport, m[3] = (uint8_t)(sport >> 8);
 	m[4] = (uint8_t)dport, m[5] = (uint8_t)(dport >> 8);
 	memcpy(m + 6, group, 8);
+	uint32_t now_ms = (uint32_t)(rt_now_us() / 1000);
+	m[16] = (uint8_t)now_ms, m[17] = (uint8_t)(now_ms >> 8), m[18] = (uint8_t)(now_ms >> 16), m[19] = (uint8_t)(now_ms >> 24);
+	m[14] = m[15] = 0;
 	memcpy(m + DATA_HEAD, MP(A3), (size_t)len);
 	const uint8_t *to = MP(A1);
 	if (!in_group) DONE(0);
@@ -511,7 +549,11 @@ void hle_sceNetAdhocPdpSend(CPU *c) {
 	if (!memcmp(to, BROADCAST, 6)) {
 		ns.bcast++;
 		for (int i = 0; i < PEER_MAX; i++)
-			if (same_group(&peers[i])) plat_net_send(peers[i].mac, m, DATA_HEAD + len), ns.out_msgs++, ns.out_bytes += DATA_HEAD + (uint64_t)len;
+			if (same_group(&peers[i])) {
+				uint16_t q = peers[i].send_seq++;
+				m[14] = (uint8_t)q, m[15] = (uint8_t)(q >> 8);
+				plat_net_send(peers[i].mac, m, DATA_HEAD + len), ns.out_msgs++, ns.out_bytes += DATA_HEAD + (uint64_t)len;
+			}
 	} else if (!memcmp(to, my_mac(), 6)) {
 		// To itself: the PSP delivers it to its own socket. The game counts on it: its round
 		// update sends the player's state to every player slot, its own included, and the
@@ -519,6 +561,11 @@ void hle_sceNetAdhocPdpSend(CPU *c) {
 		on_data(my_mac(), m, DATA_HEAD + len);
 	} else {
 		ns.unicast++, ns.out_msgs++, ns.out_bytes += DATA_HEAD + (uint64_t)len;
+		Peer *pt = peer_find(to);
+		if (pt) {
+			uint16_t q = pt->send_seq++;
+			m[14] = (uint8_t)q, m[15] = (uint8_t)(q >> 8);
+		}
 		plat_net_send(to, m, DATA_HEAD + len);
 	}
 	RET(0);
@@ -545,6 +592,9 @@ void hle_sceNetAdhocPdpRecv(CPU *c) {
 	uint32_t timeout = A5, nonblock = A6;
 	uint64_t end = rt_now_us() + timeout;
 	netstats_tick();
+	static int dbg_calls = -1;
+	if (dbg_calls < 0) dbg_calls = getenv("FP_NET_WAITLOG") ? 30 : 0;
+	if (dbg_calls > 0 && dbg_calls--) rt_log("net: PdpRecv timeout %u nonblock %u (ra %08x)", timeout, nonblock, c->r[31]);
 	for (;;) {
 		net_pump();
 		uint64_t frame = in_round ? round_no : rt_vblank_count() + 1;
@@ -574,7 +624,12 @@ void hle_sceNetAdhocPdpRecv(CPU *c) {
 			DONE(0);
 		}
 		if (nonblock) DONE(ERR_WOULD_BLOCK);
-		if (timeout && rt_now_us() >= end) DONE(ERR_TIMEOUT);
+		if (timeout && rt_now_us() >= end) {
+			static int dbg = -1;
+			if (dbg < 0) dbg = getenv("FP_NET_WAITLOG") != NULL;
+			if (dbg) rt_log("net: PdpRecv waited %u us for nothing (ra %08x)", timeout, c->r[31]);
+			DONE(ERR_TIMEOUT);
+		}
 		rt_wait_until(rt_now_us() + 2000);
 	}
 }

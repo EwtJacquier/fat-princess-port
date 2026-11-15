@@ -52,12 +52,14 @@ typedef struct {
 	float x, y, z, w;
 	float u, v;
 	uint8_t c0[4];
-	uint8_t c1[4];
-	float fog;
-	float box[4];  // a sprite's texture rectangle, half a texel in (u0 v0 u1 v1): sampling stays inside
-} GVert;
+	uint8_t c1[4];  // the secondary (specular) color; alpha: the fog factor (1 = no fog)
+} GVert;  // 32 bytes: a match sends ~75,000 a frame to the GPU
+typedef struct {
+	GVert v;
+	float box[4];  // the sprite's texture rectangle, half a texel in (u0 v0 u1 v1): sampling stays inside
+} SVert;  // a sprite's corner
 
-static GLuint prog, vbo, vao;
+static GLuint prog, vbo, ibo, vao;
 static GLuint fill_prog, fill_vao;  // a full-screen triangle of one alpha value (fbo_alpha_from_stencil)
 static GLint fill_u_a;
 static GLuint samplers[32];  // texture filter/wrap combinations (see RenderState.sampler)
@@ -109,6 +111,9 @@ typedef struct {
 	uint32_t *look;    // its pixels while the pack is still to be looked up for them (look_poll)
 	uint64_t look_key; // ... their content (the memo's key) and whether text.h redraws them
 	bool look_claimed;
+	uint32_t *up_px;   // a big replacement going to the GPU a strip a frame (pack_strips), into up_tex
+	GLuint up_tex;
+	int up_W, up_H, up_row, up_s;
 } TexEntry;
 #define MAX_TEX 512
 static TexEntry texcache[MAX_TEX];
@@ -170,10 +175,10 @@ bool ge_dump_finished(void) {
 static const char *VS =
 	"#version 300 es\n"
 	"layout(location=0) in vec4 a_pos; layout(location=1) in vec2 a_uv;\n"
-	"layout(location=2) in vec4 a_c0; layout(location=3) in vec4 a_c1; layout(location=4) in float a_fog;\n"
+	"layout(location=2) in vec4 a_c0; layout(location=3) in vec4 a_c1;\n"
 	"layout(location=5) in vec4 a_box;\n"
 	"out vec2 v_uv; out vec4 v_c0; out vec3 v_c1; out float v_fog; flat out vec4 v_box;\n"
-	"void main() { gl_Position = a_pos; v_uv = a_uv; v_c0 = a_c0; v_c1 = a_c1.rgb; v_fog = a_fog; v_box = a_box; }\n";
+	"void main() { gl_Position = a_pos; v_uv = a_uv; v_c0 = a_c0; v_c1 = a_c1.rgb; v_fog = a_c1.a; v_box = a_box; }\n";
 
 static const char *FS =
 	"#version 300 es\n"
@@ -356,18 +361,9 @@ void ge_init(void) {
 	glBindVertexArray(vao);
 	glGenBuffers(1, &vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(GVert), (void *)offsetof(GVert, x));
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(GVert), (void *)offsetof(GVert, u));
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GVert), (void *)offsetof(GVert, c0));
-	glEnableVertexAttribArray(3);
-	glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GVert), (void *)offsetof(GVert, c1));
-	glEnableVertexAttribArray(4);
-	glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(GVert), (void *)offsetof(GVert, fog));
-	glEnableVertexAttribArray(5);
-	glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(GVert), (void *)offsetof(GVert, box));
+	glGenBuffers(1, &ibo);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);  // (part of the vertex array's state)
+	for (int i = 0; i < 4; i++) glEnableVertexAttribArray(i);  // (pointers set by batch_flush)
 	glUseProgram(prog);
 	glUniform1i(u_tex, 0);
 	// mipmap level bias (only textures with mipmaps, the pack's, are affected); FP_LOD_BIAS
@@ -681,6 +677,11 @@ void ge_hitch(uint64_t frame_us) {
 
 // A replacement texture (pw x ph for the iw x ih texels of a w x h texture) into e->tex at its own
 // scale; texels past the picture repeat its last column and row. False if the GPU can't hold it.
+// A big one (PACK_STRIPS_FROM texels and up: a 2048x2048 picture is 16 MB) goes to the GPU over
+// several frames instead (pack_strips): sent at once it held a frame up for 25-40 ms in the browser.
+#define PACK_STRIPS_FROM (1024 * 1024)
+#define PACK_STRIP_TEXELS (512 * 1024)
+static void gl_invalidate(void);
 static bool pack_upload(TexEntry *e, const uint32_t *px, int pw, int ph, int iw, int ih, int w, int h) {
 	static GLint max_size;
 	if (!max_size) glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_size);
@@ -695,6 +696,17 @@ static bool pack_upload(TexEntry *e, const uint32_t *px, int pw, int ph, int iw,
 			memcpy(d, row, (size_t)pw * 4);
 			for (int x = pw; x < W; x++) d[x] = row[pw - 1];
 		}
+	}
+	if ((int64_t)W * H >= PACK_STRIPS_FROM) {  // big: a strip a frame (pack_strips), the original shown meanwhile
+		if (!full) full = malloc((size_t)W * H * 4), memcpy(full, px, (size_t)W * H * 4);
+		int levels = 1;
+		for (int m = W > H ? W : H; m > 1; m >>= 1) levels++;
+		glGenTextures(1, &e->up_tex);
+		glBindTexture(GL_TEXTURE_2D, e->up_tex);
+		TIMED_DO(gpu, glTexStorage2D(GL_TEXTURE_2D, levels, GL_RGBA8, W, H));
+		gl_invalidate();
+		e->up_px = full, e->up_W = W, e->up_H = H, e->up_row = 0, e->up_s = s;
+		return true;
 	}
 	if (!e->tex) glGenTextures(1, &e->tex);
 	glBindTexture(GL_TEXTURE_2D, e->tex);
@@ -724,6 +736,31 @@ static void pack_poll_(TexEntry *e) {
 	if (spent_us >= PACK_FRAME_US) return;
 	e->pack_frame = frame_no;
 	uint64_t t0 = rt_now_us();
+	if (e->up_px) {  // a big one on its way: its next strips, within this frame's time
+		batch_flush();
+		glBindTexture(GL_TEXTURE_2D, e->up_tex);
+		int rows = PACK_STRIP_TEXELS / e->up_W > 0 ? PACK_STRIP_TEXELS / e->up_W : 1;
+		while (e->up_row < e->up_H && spent_us + (rt_now_us() - t0) < PACK_FRAME_US) {
+			int n = e->up_H - e->up_row < rows ? e->up_H - e->up_row : rows;
+			TIMED_DO(gpu, glTexSubImage2D(GL_TEXTURE_2D, 0, 0, e->up_row, e->up_W, n, GL_RGBA, GL_UNSIGNED_BYTE,
+			                              e->up_px + (size_t)e->up_row * e->up_W));
+			e->up_row += n;
+		}
+		if (e->up_row >= e->up_H) {  // all there: the mipmaps, then it takes the original's place
+			TIMED_DO(mip, glGenerateMipmap(GL_TEXTURE_2D));
+			if (e->tex) glDeleteTextures(1, &e->tex);
+			e->tex = e->up_tex, e->up_tex = 0;
+			free(e->up_px);
+			e->up_px = NULL;
+			e->scale = (float)e->up_s;
+			e->mips = true;
+			e->pack1 = 0;
+			prof.n_pack++;
+		}
+		gl_invalidate();
+		spent_us += rt_now_us() - t0;
+		return;
+	}
 	int pw, ph, iw, ih;
 	bool failed;
 	uint32_t *px = TIMED(read, texpack_load(e->pack1 - 1, &pw, &ph, &iw, &ih, &failed));
@@ -750,7 +787,7 @@ static void pack_poll_(TexEntry *e) {
 	free(e->ui_orig);
 	e->ui_orig = NULL;
 	free(px);
-	e->pack1 = 0;
+	if (!e->up_px) e->pack1 = 0;  // (a big one keeps coming here for its strips)
 	uint64_t t2 = rt_now_us();
 	spent_us += t2 - t0;
 	static int slow_log = -1;  // FP_TEXPACK_SLOW=ms: the pictures that took longer than that
@@ -1003,6 +1040,12 @@ static GLuint texture_get_(int *tw, int *th, float *uvsx, float *uvsy) {
 	slot->pack1 = 0;
 	free(slot->ui_orig);
 	slot->ui_orig = NULL;
+	if (slot->up_px || slot->up_tex) {  // a replacement half way to the GPU: dropped with the old contents
+		free(slot->up_px);
+		slot->up_px = NULL;
+		if (slot->up_tex) glDeleteTextures(1, &slot->up_tex);
+		slot->up_tex = 0;
+	}
 	free(slot->look);
 	slot->look = NULL;
 	last_slot = (int)(slot - texcache);
@@ -1181,6 +1224,7 @@ static GLuint texture_get_(int *tw, int *th, float *uvsx, float *uvsy) {
 		uint32_t *px = TIMED(read, texpack_load(pk, &pw, &ph, &iw, &ih, &failed));
 		slot->w = w, slot->h = h;
 		bool shown = px && pack_upload(slot, px, pw, ph, iw, ih, w, h);
+		if (shown && slot->up_px) shown = false, slot->pack1 = pk + 1;  // big: by strips, the original meanwhile
 		free(px);
 		if (shown) {
 			if (pack_log) rt_log("texpack: replaced %016llx (%dx%d of %dx%d) at %dx", (unsigned long long)texpack_key(out, w, iw, ih), iw, ih, w, h, (int)slot->scale);
@@ -1465,6 +1509,7 @@ typedef struct {
 	float m[16];       // object position -> output x, y, z, w (row-major, rows of 4)
 	float fogz[4];     // object position -> view-space z (fog)
 	float c0[4];       // the material color (vertices without a color)
+	uint8_t c0b[4];    // ... as bytes
 	float su, sv, ou, ov;
 	float fog_end, fog_scale;
 	int mapmode, tg_src;
@@ -1478,6 +1523,7 @@ static void xf_setup(const VFmt *f, float fbw, float fbh, int tw, int th) {
 	Xf *x = &xf;
 	x->tw = tw, x->th = th, x->fbw = fbw, x->fbh = fbh;
 	unpack_rgba(reg[0x55], reg[0x58], x->c0);
+	for (int k = 0; k < 4; k++) x->c0b[k] = to8(x->c0[k]);
 	if (f->through) return;
 	// 4x4 row-major forms of the GE's matrices (world/view: 3 columns of 4 rows, translation last)
 	double W[16] = {0}, V[16] = {0}, P[16], VP[16], A[16], VW[16];
@@ -1513,9 +1559,10 @@ static void xf_setup(const VFmt *f, float fbw, float fbh, int tw, int th) {
 
 static void transform(const VFmt *f, const RawVert *rv, GVert *o) {
 	const Xf *x = &xf;
-	o->box[0] = o->box[1] = -1e9f, o->box[2] = o->box[3] = 1e9f;  // no sprite rectangle
-	float c0[4], c1[4] = {0, 0, 0, 0};
-	if (rv->has_col) {
+	float c0[4], c1[4] = {0, 0, 0, 0}, fog = 1.f;
+	bool lit = x->light && !f->through;  // else the colors pass as they are
+	if (!lit) memcpy(o->c0, rv->has_col ? rv->col : x->c0b, 4);
+	else if (rv->has_col) {
 		for (int k = 0; k < 4; k++) c0[k] = rv->col[k] / 255.f;
 	}
 	else {
@@ -1528,7 +1575,6 @@ static void transform(const VFmt *f, const RawVert *rv, GVert *o) {
 		o->w = 1.f;
 		o->u = x->tw ? rv->uv[0] / (float)x->tw : 0;
 		o->v = x->th ? rv->uv[1] / (float)x->th : 0;
-		o->fog = 1.f;
 	}
 	else {
 		float p[3] = {rv->pos[0], rv->pos[1], rv->pos[2]}, n[3] = {rv->nrm[0], rv->nrm[1], rv->nrm[2]};
@@ -1583,16 +1629,15 @@ static void transform(const VFmt *f, const RawVert *rv, GVert *o) {
 		}
 		if (x->fog) {
 			float vz = x->fogz[0] * p[0] + x->fogz[1] * p[1] + x->fogz[2] * p[2] + x->fogz[3];
-			o->fog = (vz + x->fog_end) * x->fog_scale;
-		}
-		else {
-			o->fog = 1.f;
+			fog = (vz + x->fog_end) * x->fog_scale;  // (clamped per vertex: the game draws no fog in matches)
 		}
 	}
-	for (int k = 0; k < 4; k++) {
-		o->c0[k] = to8(c0[k]);
-		o->c1[k] = to8(c1[k]);
+	if (lit) {
+		for (int k = 0; k < 4; k++) o->c0[k] = to8(c0[k]);
+		for (int k = 0; k < 3; k++) o->c1[k] = to8(c1[k]);
 	}
+	else o->c1[0] = o->c1[1] = o->c1[2] = 0;
+	o->c1[3] = to8(fog);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1637,6 +1682,7 @@ typedef struct {
 	// PPSSPP), driven by the PSP's test and ops. Clears set it from the clear color's alpha.
 	int32_t st_on, st_ref, st_mask, st_wmask;
 	GLenum st_func, st_ops[3];  // stencil fail, depth fail, depth pass
+	int32_t sprite;  // the vertices are SVerts (all_s)
 } RenderState;
 
 static RenderState glc;  // what the GL currently has
@@ -1737,36 +1783,124 @@ static void gl_apply(const RenderState *s) {
 	glc_valid = true;
 }
 
+// Batches: draws in a row with the same state share one glDrawElements. Vertices go to the GPU once
+// each (all_v) and the triangles as 32-bit indices into them (all_i): a strip of n vertices costs n
+// vertices and 3(n-2) indices instead of 3(n-2) vertices (a match draws ~40,000 strip vertices a
+// frame; as plain triangles that was ~8 MB of vertices a frame). A batch that ends (another state
+// comes) waits, recorded with its state; the batches go to the GPU together (glBufferSubData into
+// ring buffers made anew only when full) and are drawn in order when something needs the drawing
+// done (batch_flush: another render target, a texture refilled, the frame shown...) or when
+// FLUSH_BYTES are queued: the browser passes uploads to its GPU process through a shared buffer of a
+// few megabytes, and one huge upload a frame waits for it, where pieces overlap with the GPU's work.
+typedef struct {
+	RenderState st;
+	uint32_t first, n;  // indices
+} BatchRec;
+static BatchRec *recs;
+static size_t n_recs, recs_cap;
+static GVert *all_v;
+static size_t all_n, all_cap;  // the queued vertices (the open batch's included)
+static SVert *all_s;
+static size_t all_ns, all_scap;  // the queued sprite corners: sprite batches index these
+static uint32_t *all_i;
+static size_t all_ni, all_icap;  // the queued indices (into all_v, or all_s for a sprite batch)
+static size_t batch_first;      // the open batch's first index (all_i + batch_first ..all_ni)
 static RenderState batch_state;
-static GVert *batch_v;
-static size_t batch_n, batch_cap;
 static uint64_t stat_draws, stat_batches;
 static uint64_t draws_total;  // every draw so far (ge_draws_total: the display's frame pacing)
 
-static void batch_reserve(size_t n) {
-	if (batch_n + n <= batch_cap) return;
-	batch_cap = (batch_n + n) * 2 + 4096;
-	batch_v = realloc(batch_v, batch_cap * sizeof(GVert));
+static void batch_close(void) {
+	if (all_ni == batch_first) return;
+	if (n_recs == recs_cap) recs_cap = recs_cap * 2 + 64, recs = realloc(recs, recs_cap * sizeof *recs);
+	recs[n_recs++] = (BatchRec){batch_state, (uint32_t)batch_first, (uint32_t)(all_ni - batch_first)};
+	batch_first = all_ni;
+}
+
+#define VBO_RING (16u << 20)
+#define IBO_RING (4u << 20)
+#define FLUSH_BYTES (512u << 10)
+static size_t vbo_used = VBO_RING, ibo_used = IBO_RING;  // full: the first upload makes the buffers
+
+static size_t queued_bytes(void) { return all_n * sizeof(GVert) + all_ns * sizeof(SVert) + all_ni * sizeof(uint32_t); }
+
+// Room for nv more vertices (sprite corners if sprite) and ni more indices of the open batch.
+static void batch_reserve(bool sprite, size_t nv, size_t ni) {
+	if (!sprite && all_n + nv > all_cap) all_cap = (all_n + nv) * 2 + 4096, all_v = realloc(all_v, all_cap * sizeof(GVert));
+	if (sprite && all_ns + nv > all_scap) all_scap = (all_ns + nv) * 2 + 1024, all_s = realloc(all_s, all_scap * sizeof(SVert));
+	if (all_ni + ni > all_icap) all_icap = (all_ni + ni) * 2 + 4096, all_i = realloc(all_i, all_icap * sizeof(uint32_t));
+}
+
+// Uploads bytes of data to the ring buffer bound to target; returns its offset there.
+static size_t ring_upload(GLenum target, size_t ring, size_t *used, const void *data, size_t bytes) {
+	if (bytes > ring) {  // bigger than the whole ring: a buffer of its own
+		glBufferData(target, (GLsizeiptr)bytes, data, GL_STREAM_DRAW);
+		*used = ring;
+		return 0;
+	}
+	if (*used + bytes > ring) {
+		glBufferData(target, (GLsizeiptr)ring, NULL, GL_STREAM_DRAW);
+		*used = 0;
+	}
+	size_t at = *used;
+	glBufferSubData(target, (GLintptr)at, (GLsizeiptr)bytes, data);
+	*used += (bytes + 15) & ~(size_t)15;
+	return at;
+}
+
+// Points the vertex attributes at GVerts (or SVerts) at offset at of the vertex buffer. Attribute 5,
+// the sprite rectangle, is a constant "anywhere" for the others.
+static void vertex_layout(size_t at, bool sprite) {
+	GLsizei stride = sprite ? sizeof(SVert) : sizeof(GVert);
+#define ATTR(i, n, type, norm, f) glVertexAttribPointer(i, n, type, norm, stride, (void *)(at + offsetof(GVert, f)))
+	ATTR(0, 4, GL_FLOAT, GL_FALSE, x);
+	ATTR(1, 2, GL_FLOAT, GL_FALSE, u);
+	ATTR(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, c0);
+	ATTR(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, c1);
+#undef ATTR
+	if (sprite) {
+		glEnableVertexAttribArray(5);
+		glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, stride, (void *)(at + offsetof(SVert, box)));
+	}
+	else {
+		glDisableVertexAttribArray(5);
+		glVertexAttrib4f(5, -1e9f, -1e9f, 1e9f, 1e9f);
+	}
 }
 
 // Draws everything queued. Called whenever the GL is about to read or change something a queued
 // draw depends on (textures, framebuffers, presentation).
 static void batch_flush(void) {
-	if (!batch_n) return;
-	gl_apply(&batch_state);
-	glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(batch_n * sizeof(GVert)), batch_v, GL_STREAM_DRAW);
-	glDrawArrays(batch_state.mode, 0, (GLsizei)batch_n);
-	stat_batches++;
-	batch_n = 0;
+	batch_close();
+	if (n_recs) {
+		gl_apply(&recs[0].st);  // (the vertex array and buffers bound)
+		size_t vat = all_n ? ring_upload(GL_ARRAY_BUFFER, VBO_RING, &vbo_used, all_v, all_n * sizeof(GVert)) : 0;
+		size_t sat = all_ns ? ring_upload(GL_ARRAY_BUFFER, VBO_RING, &vbo_used, all_s, all_ns * sizeof(SVert)) : 0;
+		size_t iat = ring_upload(GL_ELEMENT_ARRAY_BUFFER, IBO_RING, &ibo_used, all_i, all_ni * sizeof(uint32_t));
+		int layout = -1;
+		for (size_t i = 0; i < n_recs; i++) {
+			const RenderState *st = &recs[i].st;
+			gl_apply(st);
+			if (layout != st->sprite) layout = st->sprite, vertex_layout(layout ? sat : vat, layout);
+			glDrawElements(st->mode, (GLsizei)recs[i].n, GL_UNSIGNED_INT, (void *)(iat + recs[i].first * sizeof(uint32_t)));
+			stat_batches++;
+		}
+		n_recs = 0;
+	}
+	all_n = all_ns = all_ni = batch_first = 0;
 }
 
-// Starts or continues the batch for a draw with state s; the caller then appends its vertices.
-static void batch_begin(const RenderState *s, size_t max_verts) {
-	if (batch_n && (s->mode != GL_TRIANGLES || batch_state.mode != GL_TRIANGLES || memcmp(s, &batch_state, sizeof *s))) {
+// Starts or continues the batch for a draw with state s and room for nv vertices and ni indices;
+// the caller then appends them (indices count from all_v, or all_s for sprites). Another render
+// target draws what is queued first: what reads a framebuffer counts on its draws being done once
+// another one is drawn to.
+static void batch_begin(const RenderState *s, size_t nv, size_t ni) {
+	bool open = all_ni > batch_first, same = open && s->mode == GL_TRIANGLES && !memcmp(s, &batch_state, sizeof *s);
+	if (queued_bytes() >= FLUSH_BYTES || ((open || n_recs) && s->fbo != (open ? batch_state.fbo : recs[n_recs - 1].st.fbo)))
 		batch_flush();
-	}
-	if (!batch_n) batch_state = *s;
-	batch_reserve(max_verts);
+	else if (open && !same)
+		batch_close();
+	if (all_ni == batch_first) batch_state = *s;
+	batch_reserve(s->sprite, nv, ni);
 	stat_draws++;
 	draws_total++;
 }
@@ -2079,45 +2213,62 @@ static void draw_prim(uint32_t data) {
 	if (nodraw < 0) nodraw = getenv("FP_NODRAW") != NULL;
 	st.mode = type == 0 ? GL_POINTS : type == 1 ? GL_LINES : type == 2 ? GL_LINE_STRIP : GL_TRIANGLES;
 	if (!nodraw && type <= 6) {
-		batch_begin(&st, (size_t)count * 3);
-		GVert *o = batch_v + batch_n;
-		size_t n = 0;
+		st.sprite = type == 6;
+		batch_begin(&st, (size_t)count * 2, (size_t)count * 3);
+		GVert *o = all_v + all_n;
+		uint32_t *ix = all_i + all_ni;
+		uint32_t b0 = (uint32_t)all_n;
+		size_t nv = 0, ni = 0;
 		switch (type) {
-		case 0: case 1: case 2: memcpy(o, tv, sizeof(GVert) * (size_t)count); n = (size_t)count; break;
-		case 3: n = (size_t)count - (size_t)count % 3; memcpy(o, tv, sizeof(GVert) * n); break;
+		case 0: case 1: case 2: case 3:
+			nv = type == 3 ? (size_t)count - (size_t)count % 3 : (size_t)count;
+			memcpy(o, tv, sizeof(GVert) * nv);
+			for (size_t i = 0; i < nv; i++) ix[ni++] = b0 + (uint32_t)i;
+			break;
 		case 4:
-			for (int i = 2; i < count; i++) {
-				if (i & 1) { o[n++] = tv[i - 1]; o[n++] = tv[i - 2]; o[n++] = tv[i]; }
-				else { o[n++] = tv[i - 2]; o[n++] = tv[i - 1]; o[n++] = tv[i]; }
+			if (count < 3) break;
+			nv = (size_t)count;
+			memcpy(o, tv, sizeof(GVert) * nv);
+			for (uint32_t i = 2; i < (uint32_t)count; i++) {
+				if (i & 1) { ix[ni++] = b0 + i - 1; ix[ni++] = b0 + i - 2; }
+				else { ix[ni++] = b0 + i - 2; ix[ni++] = b0 + i - 1; }
+				ix[ni++] = b0 + i;
 			}
 			break;
 		case 5:
-			for (int i = 2; i < count; i++) { o[n++] = tv[0]; o[n++] = tv[i - 1]; o[n++] = tv[i]; }
+			if (count < 3) break;
+			nv = (size_t)count;
+			memcpy(o, tv, sizeof(GVert) * nv);
+			for (uint32_t i = 2; i < (uint32_t)count; i++) { ix[ni++] = b0; ix[ni++] = b0 + i - 1; ix[ni++] = b0 + i; }
 			break;
 		case 6:
 			for (int i = 0; i + 1 < count; i += 2) {
 				GVert tl = tv[i], br = tv[i + 1];  // the second vertex carries color/z
+				float bx[4] = {-1e9f, -1e9f, 1e9f, 1e9f};  // no rectangle
 				if (tex_on && !tex_from_fbo && tw > 0 && th > 0) {
 					// half a texel of the texture as sampled (an atlas redrawn at the render scale is finer)
 					float hu = 0.5f / ((float)tw * tex_scale), hv = 0.5f / ((float)th * tex_scale);
 					float u0 = fminf(tl.u, br.u), u1 = fmaxf(tl.u, br.u), v0 = fminf(tl.v, br.v), v1 = fmaxf(tl.v, br.v);
-					float bx[4] = {u0 + hu, v0 + hv, u1 - hu, v1 - hv};
+					bx[0] = u0 + hu, bx[1] = v0 + hv, bx[2] = u1 - hu, bx[3] = v1 - hv;
 					if (bx[0] > bx[2]) bx[0] = bx[2] = (u0 + u1) / 2.f;
 					if (bx[1] > bx[3]) bx[1] = bx[3] = (v0 + v1) / 2.f;
-					memcpy(br.box, bx, sizeof bx);
 				}
-				GVert v00 = br, v10 = br, v01 = br, v11 = br;
-				v00.x = tl.x, v00.y = tl.y, v00.u = tl.u, v00.v = tl.v;
-				v10.x = br.x, v10.y = tl.y, v10.u = br.u, v10.v = tl.v;
-				v01.x = tl.x, v01.y = br.y, v01.u = tl.u, v01.v = br.v;
-				v11.x = br.x, v11.y = br.y, v11.u = br.u, v11.v = br.v;
-				o[n++] = v00; o[n++] = v10; o[n++] = v01;
-				o[n++] = v10; o[n++] = v11; o[n++] = v01;
+				SVert *q = all_s + all_ns + nv;  // corners 00 10 01 11
+				for (int k = 0; k < 4; k++) q[k].v = br, memcpy(q[k].box, bx, sizeof bx);
+				q[0].v.x = tl.x, q[0].v.y = tl.y, q[0].v.u = tl.u, q[0].v.v = tl.v;
+				q[1].v.y = tl.y, q[1].v.v = tl.v;
+				q[2].v.x = tl.x, q[2].v.u = tl.u;
+				uint32_t k = (uint32_t)(all_ns + nv);
+				ix[ni++] = k, ix[ni++] = k + 1, ix[ni++] = k + 2;
+				ix[ni++] = k + 1, ix[ni++] = k + 3, ix[ni++] = k + 2;
+				nv += 4;
 			}
 			break;
 		default: break;
 		}
-		batch_n += n;
+		if (type == 6) all_ns += nv;
+		else all_n += nv;
+		all_ni += ni;
 		if (st.mode != GL_TRIANGLES) batch_flush();
 	}
 	if (gedebug && dbg_prims++ < 400) {

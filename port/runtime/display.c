@@ -31,6 +31,7 @@ static uint32_t fb_addr, fb_width = 512, fb_format = 3;
 static unsigned long fps_frames;  // sceDisplaySetFrameBuf calls (game frames)
 // smoothness (FP_FPS): vblanks that showed the same frame again, frames replaced before a vblank
 static unsigned long held_vblanks, lost_frames, frames_since_vblank;
+void kernel_vblank_report(bool held);
 static char dump_dir[256];
 static unsigned dump_every;
 static unsigned long dump_from;  // FP_DUMP_FROM: first vblank to dump
@@ -161,6 +162,7 @@ static void dump_frame(unsigned long frame, const uint32_t *px, int w, int h) {
 
 void platform_vblank(void) {
 	unsigned long frame = (unsigned long)rt_vblank_count();
+	kernel_vblank_report(frames_since_vblank == 0);
 	if (frames_since_vblank == 0) held_vblanks++;
 	else lost_frames += frames_since_vblank - 1;
 	frames_since_vblank = 0;
@@ -315,7 +317,22 @@ static void frame_pace(void) {
 static uint64_t shown_vblank;
 uint64_t rt_shown_vblank(void) { return shown_vblank; }
 
+extern uint64_t rt_main_blocked_us[9];
 void hle_sceDisplaySetFrameBuf(CPU *c) {
+	static int slow = -1;  // FP_BLOCKLOG=ms: frames longer than 20 ms, and where their time went
+	if (slow < 0) slow = getenv("FP_BLOCKLOG") != NULL;
+	if (slow && A0) {
+		static uint64_t last;
+		uint64_t now = rt_now_us();
+		if (last && now - last > 20000) {
+			const uint64_t *b = rt_main_blocked_us;
+			rt_log("slow frame: %.1f ms, user_main blocked: delay %.1f, vblank %.1f, event flag %.1f, sema %.1f, other %.1f (vblank %lu)",
+			       (now - last) / 1e3, b[1] / 1e3, b[2] / 1e3, b[3] / 1e3, b[7] / 1e3, (b[4] + b[5] + b[6] + b[8]) / 1e3,
+			       (unsigned long)rt_vblank_count());
+		}
+		memset(rt_main_blocked_us, 0, sizeof rt_main_blocked_us);
+		last = now;
+	}
 	if (A0) {
 		frame_pace();
 		shown_vblank = rt_vblank_count();

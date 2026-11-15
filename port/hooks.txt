@@ -10,3 +10,4 @@
 0890872c  # NetGame start hosting (mode, map, max_players, num_humans; clamps humans to 8) -> mods/players.c (players mod: up to 16 people)
 0890c778  # NetGame host: sends the next queued joiner the room (then waits 5 s) -> mods/players.c (players mod: 1 s)
 0890cbf0  # NetGame host: sends the next queued joiner the level's state (then waits 5 s) -> mods/players.c (players mod: 1 s)
+089aa070  # sets how long a peer may stay silent (4 s Ad Hoc, 20 s PSN) -> mods/online.c (Ad Hoc: 15 s, over the internet)

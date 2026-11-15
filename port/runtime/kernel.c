@@ -191,6 +191,8 @@ struct Thread {
 
 #define MAX_THREADS 64
 static Thread threads[MAX_THREADS];
+static int vb_report_on = -1;  // FP_BLOCKLOG: kernel_vblank_report
+static uint64_t vb_run_us[MAX_THREADS], vb_idle_us;
 static Thread *cur;
 
 // Debug (GE capture): every live thread with its VFPU registers.
@@ -247,6 +249,8 @@ static void switch_to_scheduler(void) {
 	coro_switch(&t->co, &sched_co);
 }
 
+uint64_t rt_main_blocked_us[9];  // FP_BLOCKLOG: user_main's time blocked, by wait type
+
 // Block the current thread; returns the wait result.
 static int32_t block_current(int wait_type, void *obj, uint64_t wake_us) {
 	Thread *t = cur;
@@ -258,7 +262,18 @@ static int32_t block_current(int wait_type, void *obj, uint64_t wake_us) {
 	if (wake_us && wake_us < next_timer_us) {
 		next_timer_us = wake_us;
 	}
+	static int blocklog = -1;  // FP_BLOCKLOG=ms (tests): the main thread's waits longer than that
+	if (blocklog < 0) blocklog = getenv("FP_BLOCKLOG") ? atoi(getenv("FP_BLOCKLOG")) : 0;
+	uint64_t t0 = blocklog ? rt_now_us() : 0;
 	switch_to_scheduler();
+	if (blocklog && !strcmp(t->name, "user_main")) {
+		uint64_t us = rt_now_us() - t0;
+		if (wait_type >= 0 && wait_type < 9) rt_main_blocked_us[wait_type] += us;
+		if (wait_type == WT_VBLANK) return t->wait_result;
+		if (us >= (uint64_t)blocklog * 1000)
+			rt_log("block: user_main waited %.1f ms (type %d, ra %08x, vblank %lu)", us / 1e3, wait_type, t->cpu.r[31],
+			       (unsigned long)rt_vblank_count());
+	}
 	return t->wait_result;
 }
 
@@ -711,11 +726,13 @@ void kernel_run(void) {
 			now = rt_now_us();
 			if (next > now) {
 				platform_idle(next - now);
+				if (vb_report_on > 0) vb_idle_us += rt_now_us() - now;
 			}
 			continue;
 		}
 		cur = t;
 		t->status = TS_RUNNING;
+		uint64_t run0 = vb_report_on > 0 ? rt_now_us() : 0;
 		coro_switch(&sched_co, &t->co);
 		while (main_call_fn) {  // the thread asked to run something here (rt_call_on_main)
 			void (*fn)(void *) = main_call_fn;
@@ -723,8 +740,43 @@ void kernel_run(void) {
 			fn(main_call_arg);
 			coro_switch(&sched_co, &t->co);
 		}
+		if (vb_report_on > 0) vb_run_us[t - threads] += rt_now_us() - run0;
 		cur = NULL;
 	}
+}
+
+// FP_BLOCKLOG (tests): each thread's running time and the idle time in a vblank that showed no new
+// frame (kernel_vblank_report from display.c), with what the waiting threads wait on.
+void kernel_vblank_report(bool held) {
+	if (vb_report_on < 0) vb_report_on = getenv("FP_BLOCKLOG") != NULL;
+	if (!vb_report_on) return;
+	if (held) {
+		static const char *wt[] = {"-", "delay", "vblank", "evf", "thread-end", "vpl", "time", "sema", "sleep"};
+		char line[1200];
+		int o = snprintf(line, sizeof line, "held vblank %lu: idle %.1f ms |", (unsigned long)rt_vblank_count(), vb_idle_us / 1e3);
+		for (int i = 0; i < MAX_THREADS && o < 1100; i++) {
+			Thread *t = &threads[i];
+			if (!t->uid || (vb_run_us[i] < 300 && !(t->status & TS_WAIT && !strcmp(t->name, "user_main")))) continue;
+			o += snprintf(line + o, sizeof line - (size_t)o, " %s %.1f%s%s ra %08x;", t->name, vb_run_us[i] / 1e3,
+			              t->status & TS_WAIT ? " waits " : "", t->status & TS_WAIT ? wt[t->wait_type] : "", t->cpu.r[31]);
+		}
+		for (int i = 0; i < MAX_THREADS && o < 1100; i++) {  // the main thread's callers (guessed from its stack)
+			Thread *t = &threads[i];
+			if (!t->uid || strcmp(t->name, "user_main") || !(t->status & TS_WAIT)) continue;
+			o += snprintf(line + o, sizeof line - (size_t)o, " stack:");
+			int n = 0;
+			for (uint32_t a = t->cpu.r[29] & ~3u; a < t->cpu.r[29] + 0x800 && n < 10 && o < 1150; a += 4) {
+				if (!rt_valid(a, 4)) break;
+				uint32_t v = M32(a);
+				if (v < 0x08804008 || v >= META_IMAGE_END || (v & 3)) continue;
+				uint32_t op = M32(v - 8);
+				if (op >> 26 == 3 || (op >> 26 == 0 && (op & 0x3F) == 9)) o += snprintf(line + o, sizeof line - (size_t)o, " %08x", v - 8), n++;
+			}
+		}
+		rt_log("%s", line);
+	}
+	memset(vb_run_us, 0, sizeof vb_run_us);
+	vb_idle_us = 0;
 }
 
 // Debug: one line per thread (called from the watchdog signal handler; uses fprintf on purpose,
@@ -1327,11 +1379,24 @@ void kernel_run_callbacks(void) {
 void hle_sceKernelCheckCallback(CPU *c) {
 	if (!pending_callbacks) {
 		// Games spin on this while another thread works; nothing can change before the next
-		// timer or vblank, so sleep until then instead of burning the CPU.
+		// timer or vblank, so a spin sleeps until then instead of burning the CPU. A single call
+		// only gives the others a turn: Fat Princess calls it once a frame from its main loop
+		// (FUN_08a0bab0), and sleeping to the vblank there pushed the rest of the frame past it
+		// (a held frame, many a second online, where a frame has more to do).
+		static uint64_t last_us;
+		static int spins;
+		uint64_t now = rt_now_us();
+		spins = now - last_us < 2000 ? spins + 1 : 0;
+		if (spins < 8) {
+			rt_wait_until(now + 100);
+			last_us = rt_now_us();
+			RET(0);
+			return;
+		}
 		uint64_t vb = last_vblank_us + VBLANK_US < next_vblank_us ? last_vblank_us + VBLANK_US : next_vblank_us;
 		uint64_t next = vb < next_timer_us ? vb : next_timer_us;
-		uint64_t now = rt_now_us();
 		rt_wait_until(next > now + 100 ? next : now + 100);
+		last_us = rt_now_us();
 		RET(0);
 		return;
 	}

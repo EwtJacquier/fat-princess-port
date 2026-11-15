@@ -174,3 +174,44 @@ Network:
   OFFLINE (STORY / CASUAL / ARENA MODE); casual match: "400:start,500:cross,600:down,660:cross,
   780:right,840:cross,960-3000/120:cross". Environment switches are FP_* (FP_INPUT, FP_DUMP,
   FP_DUMP_FULL, FP_MS0, FP_SCALE, FP_TEXTURES, FP_NETSTATS...).
+
+## Performance and online play (2026-11-15)
+- sceKernelCheckCallback: the runtime slept to the next vblank when no callback was pending (for
+  games that spin on it). Fat Princess calls it once a frame from its main loop (FUN_08a0bab0), so
+  every frame slept there and the rest of the frame could miss the vblank: online, with late
+  datagrams to handle, 20-45 vblanks in 5 s showed no new frame on the host and the clients. A
+  single call now only gives the other threads a turn (0.1 ms); a spin (8 calls < 2 ms apart)
+  still sleeps. Measured natively with one player on a poor link (80 ms + 0-150 ms, 8% lost both
+  ways): held vblanks 21-45 per 5 s -> 0 (host and clients). CPU +8%.
+- HD textures: a picture of 1024x1024 texels or more goes to the GPU a strip at a time
+  (glTexStorage2D + glTexSubImage2D within the 6 ms a frame pack uploads get; the original shows
+  until the last strip and the mipmaps): sent at once a 2048x2048 one held a browser frame up
+  25-40 ms.
+- Vertices to the GPU (ge.c batches): a match draws ~13,000 times a second in ~7,000 GL draws, and
+  ~75,000 vertices a frame (40,000 of them triangle strips). Strips used to become plain triangles
+  (3x the vertices) of 52 bytes, ~8 MB a frame, one buffer upload per GL draw: in the browser
+  bufferData took ~10% of the main thread (14% when queued into one upload a frame: Chrome passes
+  uploads through a shared buffer and a big one waits for its GPU process). Now the vertices go
+  once each (32 bytes: fog in the secondary color's alpha, the game draws none in matches; the
+  sprite rectangle only on sprite corners) with 32-bit indices, the queued batches uploaded
+  together into ring buffers and flushed every 512 KB: ~500 MB/s -> ~180 MB/s, bufferSubData 4%,
+  the browser's main thread idle in a match 12-20% -> 31%.
+- DATA messages carry a sequence number and the send time (ms): FP_NETSTATS=s adds, per sender,
+  datagrams lost on the way, come late (after a later one) and the delay over the shortest seen.
+- Measured over LiveKit (two pages on one machine, 30 pings/s): round trip median 34 ms, 90% under
+  134 ms, 99% under 256 ms, 3.5% lost. The lossy channel is unordered (ordered: false,
+  maxRetransmits: 0): no head-of-line blocking. Four pages in one 16-person match: per sender
+  0-48 lost per 10 s, delay over the shortest 12-22 ms on average, 30-90 ms at most. A page whose
+  LiveKit signalling timed out (ping timeout) reconnects in 2-3 s, but the game had already shown
+  CONNECTION LOST.
+- Test tools: native internet on arrival (FP_NET_DELAY=ms, FP_NET_JITTER=ms, FP_NET_LOSS=%) and on
+  sending (FP_NET_UP_DELAY / _JITTER / _LOSS: one player with a poor connection);
+  FP_BLOCKLOG=ms logs the main thread's long waits, frames over 20 ms and, for every vblank that
+  showed no new frame, each thread's running time, the idle time and the main thread's callers;
+  FP_NET_WAITLOG=1 the game's PdpRecv calls (non-blocking, once a frame).
+- Connection lost: when a network game starts (FUN_0890173c, FUN_0890872c) the game sets how long a
+  peer may stay silent (FUN_089aa070(session, ms) -> 0x08b08f78 and each peer; FUN_089065cc then
+  shows ConnectionLost_General): 20 s on the PSN, 4 s on Ad Hoc. mods/online.c (FP_MOD_ONLINE=0
+  off) makes Ad Hoc 15 s: a LiveKit connection that times out reconnects in 2-3 s. Native test
+  (FP_NET_OUTAGE=from:seconds, nothing in or out): with 4 s a 7 s outage dropped the player, with
+  15 s the player went on.
