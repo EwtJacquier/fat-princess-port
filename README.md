@@ -1,5 +1,7 @@
 # Fat Princess: Fistful of Cake — PC & browser port
 
+If you enjoy this port and feel like it, you can [buy me a coffee](https://buymeacoffee.com/ewtjacquier). Thank you!
+
 A fan-made port of **Fat Princess: Fistful of Cake** (PSP, 2010) that runs natively on Linux and
 **in the browser**, at high resolution, with HD textures, accounts for each player and **online
 matches with friends** (the game's Ad Hoc mode). It is not an emulator: the game's own program was
