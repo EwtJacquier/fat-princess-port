@@ -34,6 +34,22 @@ EM_JS(void, js_input_init, (), {
 		if (!e.ctrlKey && !e.metaKey && !e.altKey) e.preventDefault();
 	});
 	window.addEventListener('keyup', e => P.keys.delete(e.code));
+	// Mouse buttons over the game count as the keys Mouse0 (left), Mouse1 (middle), Mouse2 (right)...
+	// (mousedown/mouseup, not pointer events: those don't tell a second button pressed with the first).
+	const bound = c => P.keyMap[c] || (P.keyAnalog && P.keyAnalog[c]);
+	const cv = document.getElementById('canvas');
+	if (cv) {
+		cv.addEventListener('mousedown', e => {
+			resumeAudio();
+			const c = 'Mouse' + e.button;
+			if (Module.fpMenuOpen || !bound(c)) return;
+			P.keys.add(c);
+			P.downAt.set(c, performance.now());
+			e.preventDefault();
+		});
+		cv.addEventListener('contextmenu', e => e.preventDefault());
+	}
+	window.addEventListener('mouseup', e => P.keys.delete('Mouse' + e.button));
 	window.addEventListener('keydown', e => {  // F9: capture the next frame's GE draws for debugging
 		if (e.code !== 'F9') return;
 		e.preventDefault();
@@ -277,22 +293,36 @@ void plat_drawable_size(int *w, int *h) { emscripten_get_canvas_element_size("#c
 // hole out had played on). In a network game the timer runs in a worker then, whose timers keep
 // their pace, and wakes the game through the channel.
 EM_ASYNC_JS(void, js_sleep, (int ms), {
+	// One channel for every wake-up, each sleep with its own number: a timer of a sleep that a
+	// refresh already ended wakes nothing later (a new MessageChannel a sleep cost more than the rest).
+	let S = Module.fpSleep;
+	if (!S) {
+		S = Module.fpSleep = {ch: new MessageChannel(), id: 0, resolve: null};
+		S.wake = (id) => {
+			if (id !== S.id || !S.resolve) return;
+			const r = S.resolve;
+			S.resolve = null;
+			r();
+		};
+		S.ch.port1.onmessage = (e) => S.wake(e.data);
+	}
+	const id = ++S.id;
 	await new Promise((resolve) => {
-		const ch = new MessageChannel();
-		ch.port1.onmessage = () => resolve();
+		S.resolve = resolve;
 		if (ms <= 0) {
-			ch.port2.postMessage(0);
+			S.ch.port2.postMessage(id);
 			return;
 		}
-		if (Module.fpVsync && Module.fpVsync.m) Module.fpVsync.wake = resolve;
+		if (Module.fpVsync && Module.fpVsync.m) Module.fpVsync.wake = () => S.wake(id);
 		if (document.hidden && Module.fpNet && Module.fpNet.state === 2) {
 			if (!Module.fpTimer) {
-				const src = 'onmessage = (e) => setTimeout(() => e.ports[0].postMessage(0), e.data);';
+				const src = 'onmessage = (e) => setTimeout(() => postMessage(e.data[1]), e.data[0]);';
 				Module.fpTimer = new Worker(URL.createObjectURL(new Blob([src], {type: 'text/javascript'})));
+				Module.fpTimer.onmessage = (e) => S.wake(e.data);
 			}
-			Module.fpTimer.postMessage(ms, [ch.port2]);
+			Module.fpTimer.postMessage([ms, id]);
 		} else {
-			setTimeout(() => ch.port2.postMessage(0), ms);
+			setTimeout(() => S.ch.port2.postMessage(id), ms);
 		}
 	});
 });
@@ -305,11 +335,11 @@ void plat_swap(void) {
 	js_sleep(0);
 }
 
-// Waits under a millisecond spin in the scheduler instead (it calls this again until its timer is
-// due).
-void plat_sleep(uint64_t us) {
-	if (us >= 1000) js_sleep((int)(us / 1000));
-}
+// Waits under a millisecond hand the browser a turn too (a message through the channel comes back
+// in tens of microseconds; the scheduler calls this again until its timer is due): spinning there
+// instead kept the page's thread busy (in a fight, a sixth of its time) and the browser's own
+// work (network messages, input) waiting.
+void plat_sleep(uint64_t us) { js_sleep((int)(us / 1000)); }
 
 bool plat_debug_dump_requested(void) {
 	return EM_ASM_INT({ const r = Module.fpDumpReq | 0; Module.fpDumpReq = 0; return r; }) != 0;

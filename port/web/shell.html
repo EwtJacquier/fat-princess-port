@@ -363,7 +363,7 @@
 
     <div class="row"><span>HD textures<br><span class="sub">The texture pack in build/textures, the sharp lettering included; off: the game's own textures</span></span><button id="hd">On</button></div>
 
-    <h2>Keyboard <button class="link" id="keys-reset">Restore defaults</button></h2>
+    <h2>Keyboard and mouse <button class="link" id="keys-reset">Restore defaults</button></h2>
     <div class="grid" id="keys"></div>
 
     <h2>Gamepad <button class="link" id="pad-reset">Restore defaults</button></h2>
@@ -398,11 +398,13 @@ if (!window.fpMobile) {
   // The PSP analog stick (walking) on four keys: [dx, dy].
   const ANALOG = [['aup', 'Analog ↑', 0, -1], ['adown', 'Analog ↓', 0, 1], ['aleft', 'Analog ←', -1, 0],
                   ['aright', 'Analog →', 1, 0]];
-  // Keyboard: walking (the analog stick, which also moves through the menus) on the arrows, the d-pad
-  // (helpers up/down, taunts left/right) on IJKL, face buttons Z X A S, L/R on Q W.
-  const DEFAULT_KEYS = {up: 'KeyI', down: 'KeyK', left: 'KeyJ', right: 'KeyL', cross: 'KeyZ', circle: 'KeyX',
-                        square: 'KeyA', triangle: 'KeyS', l: 'KeyQ', r: 'KeyW', start: 'Enter', select: 'Backspace',
-                        aup: 'ArrowUp', adown: 'ArrowDown', aleft: 'ArrowLeft', aright: 'ArrowRight'};
+  // Keyboard and mouse: walking (the analog stick, which also moves through the menus) on WASD,
+  // attacking (□) on the left click, L on the right click, jumping (✕) on Space, △ on Q, ◯ on E, R
+  // on R, the d-pad (helpers up/down, taunts left/right) on IJKL. Mouse buttons are bound as the
+  // codes Mouse0 (left), Mouse1 (middle), Mouse2 (right), Mouse3, Mouse4 (platform_web.c).
+  const DEFAULT_KEYS = {up: 'KeyI', down: 'KeyK', left: 'KeyJ', right: 'KeyL', cross: 'Space', circle: 'KeyE',
+                        square: 'Mouse0', triangle: 'KeyQ', l: 'Mouse2', r: 'KeyR', start: 'Enter', select: 'Backspace',
+                        aup: 'KeyW', adown: 'KeyS', aleft: 'KeyA', aright: 'KeyD'};
   const STICKS = [[0, 'Left stick'], [2, 'Right stick']];
   const SCALES = [[1, '1x'], [2, '2x'], [3, '3x'], [4, '4x']];
   const TEX_FILTERS = [[0, 'Smooth'], [1, 'Sharp'], [2, 'Pixels']];
@@ -413,13 +415,13 @@ if (!window.fpMobile) {
                      'LT / L2', 'RT / R2', 'Back / Select', 'Start', 'L3', 'R3', 'D-pad ↑', 'D-pad ↓',
                      'D-pad ←', 'D-pad →', 'Home'];
   const STORE = 'fatprincess.settings';
-  const KEYS_VERSION = 2;
+  const KEYS_VERSION = 3;
 
   function loadSettings() {
     let s = {};
     try { s = JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch (e) { s = {}; }
     return {
-      // keys saved before the arrows walked (KEYS_VERSION 2) start again from the defaults
+      // keys saved before WASD and the mouse (KEYS_VERSION 3) start again from the defaults
       keys: Object.assign({}, DEFAULT_KEYS, s.keysVersion === KEYS_VERSION ? s.keys || {} : {}),
       pad: Object.assign({}, DEFAULT_PAD, s.pad || {}),
       // The PSP analog stick (walking): the left one unless the player picks the right.
@@ -482,7 +484,8 @@ if (!window.fpMobile) {
   const menu = document.getElementById('menu'), gear = document.getElementById('gear');
   let capture = null;  // {kind: 'key' | 'pad', id, el}
   const keyLabel = (c) => !c ? '—' : c.startsWith('Key') ? c.slice(3) : c.startsWith('Digit') ? c.slice(5) :
-    ({ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Space: 'Space', Enter: 'Enter', Backspace: 'Backspace',
+    ({Mouse0: 'Left click', Mouse1: 'Middle click', Mouse2: 'Right click', Mouse3: 'Mouse back', Mouse4: 'Mouse forward',
+      ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Space: 'Space', Enter: 'Enter', Backspace: 'Backspace',
       ShiftLeft: 'Left Shift', ShiftRight: 'Right Shift', ControlLeft: 'Left Ctrl', ControlRight: 'Right Ctrl',
       AltLeft: 'Left Alt', AltRight: 'Right Alt', Tab: 'Tab'})[c] || c;
   const padLabel = (i) => i == null || i < 0 ? '—' : PAD_NAMES[i] || 'Button ' + i;
@@ -601,7 +604,8 @@ if (!window.fpMobile) {
   document.getElementById('vol').addEventListener('input', (e) => setVolume(Number(e.target.value)));
   document.getElementById('vol-down').addEventListener('click', () => setVolume(settings.volume - 10));
   document.getElementById('vol-up').addEventListener('click', () => setVolume(settings.volume + 10));
-  canvas.addEventListener('dblclick', toggleFullscreen);
+  // A double click toggles fullscreen only while the left button isn't one of the game's (it attacks).
+  canvas.addEventListener('dblclick', () => { if (!Object.values(settings.keys).includes('Mouse0')) toggleFullscreen(); });
 
   window.addEventListener('keydown', (e) => {
     if (capture && capture.kind === 'key') {
@@ -620,6 +624,23 @@ if (!window.fpMobile) {
       else openMenu();
     }
   }, true);
+  // "Press a key…" takes a mouse button too; the click that follows it is swallowed (the row it
+  // landed on is drawn anew under the pointer).
+  let swallowClick = false;
+  window.addEventListener('mousedown', (e) => {
+    if (!capture || capture.kind !== 'key') return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    swallowClick = true;
+    assign('key', capture.id, 'Mouse' + e.button);
+  }, true);
+  window.addEventListener('click', (e) => {
+    if (!swallowClick) return;
+    swallowClick = false;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
+  window.addEventListener('contextmenu', (e) => { if (menu.classList.contains('open')) e.preventDefault(); });
 
   // The gear shows up while the mouse moves.
 

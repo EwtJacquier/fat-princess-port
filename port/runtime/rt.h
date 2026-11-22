@@ -71,6 +71,11 @@ void rt_wait_vblank(void);                       // block until next vblank star
 uint64_t rt_vblank_count(void);
 void rt_tap_buttons(uint32_t mask);  // mods: press PSP buttons (sceCtrl masks) for a moment
 void rt_psmf_skip_next(void);        // mods: the next movie set ends as soon as it starts
+bool rt_psmf_frame_at(uint32_t addr);  // a movie wrote its frames there lately
+void rt_texture_decoded(uint32_t *px, int w, int h);  // mods may define it: a texture's RGBA as decoded (runtime/ge.c)
+extern uint32_t rt_scene;             // mods: what the game is showing (ge.c FP_TEXCATALOG names textures by it)
+// The HD picture of the movie frame at addr (w x h RGBA standing for its iw x ih texels), or px NULL
+void ge_movie_hd(uint32_t addr, const uint32_t *px, int w, int h, int iw, int ih);
 void rt_yield(void);
 void rt_resched(void);                           // let a higher-priority ready thread run
 uint32_t rt_alloc_user(uint32_t size, bool high, const char *what);  // 256-byte aligned
