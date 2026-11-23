@@ -1,12 +1,13 @@
 """Pictures for the web page, read from the player's own ISO (Fat Princess: Fistful of Cake): the
-title logo, the menus' sunburst behind the page, and a storybook picture beside the sign-in.
+title logo, the menus' sunburst behind the page, a storybook picture beside the sign-in, and the
+carved edge of the menus' band that the page's windows wear.
 
 Every one is a texture of FP.wad (docs/NOTES.md has the formats): found by its
 pixel data's CRC, which its texture header carries. When the texture pack (build/textures) has an
 upscaled version of a picture, that one is used. Python's standard library only (serve_web.py
 imports this).
 
-    python3 -I tools/isoart.py ISO NAME OUT.png [PACK]     # NAME: logo, scene, backdrop
+    python3 -I tools/isoart.py ISO NAME OUT.png [PACK]     # NAME: one of ART
 """
 import struct
 import sys
@@ -17,9 +18,10 @@ ART = {  # name -> pixel CRC of the texture
     'logo': 0x70b1519e,      # FAT PRINCESS / FISTFUL OF CAKE (the English title screen's)
     'scene': 0x41897d4a,     # the two princesses and the giant cake slice (the story's pictures)
     'backdrop': 0xe3e72074,  # the menus' sunburst
+    'trim': 0x4e7193fc,      # the menus' band edge: orange carvings on brown (512x16, drawn in a row)
 }
 CROP = {'logo': (138, 22, 374, 233)}  # the logo's own area of its 512x256 texture
-SHOWN = ('logo', 'scene', 'backdrop')  # what the page uses (made when the server starts)
+SHOWN = ('logo', 'scene', 'backdrop', 'trim')  # what the page uses (made when the server starts)
 
 
 # ---- ISO 9660 and FP.wad -----------------------------------------------------------------------------

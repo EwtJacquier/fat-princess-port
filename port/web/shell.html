@@ -22,28 +22,48 @@
   })();
 </script>
 <style>
-  /* Fat Princess: the game's own storybook look. Windows are its dialogs: cream parchment in a dark
-     wooden frame with the orange zigzag trim, titles in pale mint caps; the chosen button is the
-     menus' gold; red and blue are the two teams. The menus' sunburst is behind it all. */
+  /* Fat Princess: the game's own storybook look, as its menus on the PSP draw it. Windows are a
+     parchment page (the How to Play and loading screens' paper, pale straw with brown ink) in a
+     dark wooden frame; along their top runs the band's carved edge (orange carvings on brown, the
+     game's own strip from the player's ISO) with the screen's title on a dark plank, cream letters
+     dropping a shadow. Buttons are the menus' planks: brown with straw letters, the chosen one gold
+     with white letters, each with its orange edge. Button hints are the game's slate circles. Lettering: Germania One for the
+     carved menu words, Patrick Hand for the handwritten text (both SIL OFL, web/fonts). The menus'
+     sunburst is behind it all. */
+  @font-face { font-family: "Germania One"; src: url(fonts/GermaniaOne-Regular.ttf) format("truetype"); font-display: swap; }
+  @font-face { font-family: "Patrick Hand"; src: url(fonts/PatrickHand-latin.woff2) format("woff2"); font-display: swap; }
   :root {
     color-scheme: dark;
-    --bg: #000; --panel: rgba(13, 17, 23, 0.96); --line: #30363d; --text: #c9d1d9; --muted: #8b949e;
-    --wood-dark: #3a1f0b; --wood: #6b3d17; --wood-light: #8f5726; --trim: #e8892b; --trim-dark: #a95a12;
-    --paper: #f8e7b5; --paper-2: #f1d793; --ink: #3a2410; --ink-soft: #7a5630; --mint: #c3f7b8;
-    --gold-1: #fff0a0; --gold-2: #ffd23f; --gold-3: #f0a51c; --red: #d8402a; --red-dark: #8e2216; --blue: #2f73d8; --blue-dark: #183f86;
-    --title: italic 800 15px/1.1 "Bahnschrift Condensed", "Arial Narrow", "Roboto Condensed", "Liberation Sans Narrow", "Nimbus Sans Narrow", Impact, sans-serif;
-    --body: "Trebuchet MS", "Segoe UI", Verdana, Tahoma, sans-serif;
+    --bg: #000; --text: #c9d1d9; --muted: #8b949e;
+    /* the menus' planks (sampled from their textures): brown, gold when chosen, dark for titles */
+    --line: #573e1f; --plank: #8a622a; --plank-hi: #946c30; --plank-lip: #a67c39; --edge: #ab7229;
+    --gold: linear-gradient(#f8c600, #fbb500 22%, #fabd00 55%, #f7cb00);
+    --tab: #4b361b; --tab-line: #40301b; --tab-hi: #6c4c2a; --tab-lip: #644726;
+    --cream: #eeeecc; --straw: #ffdd77; --white: #fff;
+    /* the parchment and its ink */
+    --paper: #f5e4a6; --paper-2: #ecd78f; --paper-line: #b08a4a; --ink: #332200; --ink-soft: #5e4a1e;
+    --red: #d8402a; --red-dark: #a82a1a; --blue: #2f73d8; --blue-dark: #183f86;
+    --focus: #2f73d8;  /* the blue team's: plain against the paper, the planks and the gold */
+    --title: 400 18px/1.1 "Germania One", "Arial Narrow", Impact, sans-serif;
+    --body: "Patrick Hand", "Comic Neue", "Trebuchet MS", "Segoe UI", sans-serif;
+    /* the menus' words: a dark outline all round and a drop below it */
+    --ring: 1.3px 0 0 #2e2210, -1.3px 0 0 #2e2210, 0 1.3px 0 #2e2210, 0 -1.3px 0 #2e2210, 1px 1px 0 #2e2210,
+            -1px 1px 0 #2e2210, 1px -1px 0 #2e2210, -1px -1px 0 #2e2210, 1.5px 2.5px 0 #2e2210;
+    /* the band's carved edge: the game's strip (art/trim.png, from the ISO), drawn carvings without it */
+    --trim: url(art/trim.png) 0 50% / auto 100% repeat-x,
+            repeating-linear-gradient(90deg, transparent 0 6px, rgba(232,137,43,.85) 6px 9px, transparent 9px 15px, rgba(232,137,43,.85) 15px 17px, transparent 17px 22px) 0 50% / 100% 46% no-repeat,
+            linear-gradient(#3e2d17 0 12%, #83582a 12% 88%, #3e2d17 88%);
   }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; overflow: hidden; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 16px/1.4 var(--body); overflow: hidden; }
   /* The game fills the window at the PSP's 480:272 aspect ratio. */
   #stage { position: fixed; inset: 0; display: grid; place-items: center; }
   #canvas { display: block; width: min(100vw, calc(100vh * 480 / 272)); aspect-ratio: 480 / 272; background: #000; outline: none; }
   #picker { position: fixed; inset: 0; display: none; place-items: center; text-align: center; padding: 16px; }
   #picker .win { width: min(440px, 100%); }
-  #picker label.go { display: inline-block; margin-top: 14px; cursor: pointer; }
+  #picker label.go { display: inline-block; margin: 14px 0 6px; cursor: pointer; }
   #picker input { display: none; }
   #status { position: fixed; left: 0; right: 0; bottom: 12px; text-align: center; color: var(--muted); pointer-events: none;
-            transition: opacity .6s; }
+            font-size: 17px; transition: opacity .6s; }
   #crash { position: fixed; inset: auto 16px 16px 16px; display: none; max-height: 45vh; overflow: auto; padding: 12px 14px;
            background: rgba(13, 17, 23, .95); border: 1px solid #f85149; border-radius: 8px; color: var(--text);
            font: 12px/1.45 ui-monospace, monospace; white-space: pre-wrap; user-select: text; }
@@ -52,68 +72,148 @@
   /* ---- The two corner buttons, top right: settings (blue team) and fullscreen (red team), round
      shields with a wooden rim; gone in fullscreen (Esc, or the gamepad's Home, opens the settings) */
   .corner { all: unset; position: fixed; right: 12px; z-index: 1; width: 42px; height: 42px; border-radius: 50%; cursor: pointer;
-            display: grid; place-items: center; color: #fff; box-sizing: border-box; border: 3px solid var(--wood-dark);
-            box-shadow: inset 0 0 0 2px rgba(255,255,255,.35), inset 0 -6px 10px rgba(0,0,0,.25), 0 3px 0 var(--wood-dark), 0 5px 10px rgba(0,0,0,.35); }
+            display: grid; place-items: center; color: #fff; box-sizing: border-box; border: 3px solid var(--tab-line);
+            box-shadow: inset 0 0 0 2px rgba(255,255,255,.35), inset 0 -6px 10px rgba(0,0,0,.25), 2px 3px 0 var(--tab-line), 0 5px 10px rgba(0,0,0,.35); }
   .corner:hover { filter: brightness(1.12); }
-  .corner:active { transform: translateY(2px); box-shadow: inset 0 0 0 2px rgba(255,255,255,.35), 0 1px 0 var(--wood-dark); }
-  .corner:focus-visible { outline: 3px solid var(--gold-2); outline-offset: 2px; }
+  .corner:active { transform: translate(2px, 2px); box-shadow: inset 0 0 0 2px rgba(255,255,255,.35), 0 0 0 var(--tab-line); }
+  .corner:focus-visible { outline: 3px solid var(--straw); outline-offset: 2px; }
   .corner svg { width: 20px; height: 20px; filter: drop-shadow(0 1px 0 rgba(0,0,0,.45)); }
   #gear { top: 12px; background: radial-gradient(circle at 35% 30%, #7fb3ff, var(--blue) 55%, var(--blue-dark)); }
-  #full { top: 62px; background: radial-gradient(circle at 35% 30%, #ff9a7c, var(--red) 55%, var(--red-dark)); }
+  #full { top: 62px; background: radial-gradient(circle at 35% 30%, #ff9a7c, var(--red) 55%, #8e2216); }
   html:fullscreen .corner { display: none; }
 
-  /* ---- Settings: the same dialog window as the sign-in screen (.win, below) */
+  /* ---- A window of the game: parchment in a dark wooden frame, the carved band along its top with
+     the title on a dark plank, and along its bottom */
+  .win { position: relative; width: min(420px, 100%); box-sizing: border-box; border-radius: 4px; text-align: left;
+    padding: 0 7px 7px; background: linear-gradient(var(--tab-hi), var(--tab) 30%, #44311a);
+    border: 3px solid var(--tab-line); box-shadow: inset 0 0 0 1px rgba(255,221,119,.18), 4px 5px 0 rgba(64,48,27,.55), 0 12px 30px rgba(60,30,8,.4); }
+  .win::after { content: ""; display: block; flex: none; height: 12px; margin: 7px -7px -7px; background: var(--trim);
+    border-top: 2px solid var(--tab-line); }
+  .win .bar { position: relative; display: flex; align-items: center; gap: 10px; flex: none; min-height: 46px; margin: 0 -7px; padding: 6px 10px 9px;
+    box-sizing: border-box; background: var(--trim); background-size: auto 22px, 100% 10px, 100% 22px; background-position: 0 50%;
+    background-repeat: repeat-x, no-repeat, no-repeat; }
+  .win .bar .ball { display: none; }
+  /* the title: cream carved letters on the dark plank, its slab a little below and to the right */
+  .win .bar .title { position: relative; padding: 6px 14px 4px; font: var(--title); font-size: 21px; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--cream); text-shadow: 2px 2px 0 #1a1208; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+    background: linear-gradient(90deg, var(--tab-hi) 0 3px, transparent 3px), linear-gradient(#523b1e 0 2px, var(--tab) 2px calc(100% - 3px), var(--tab-lip) calc(100% - 3px));
+    border: 2px solid var(--tab-line); border-radius: 2px; box-shadow: 4px 4px 0 var(--tab-line); }
+  .win .body { position: relative; padding: 14px 18px 14px; border-radius: 2px; color: var(--ink); font-size: 17px;
+    background: radial-gradient(ellipse 18% 12% at 92% 10%, rgba(214,180,100,.35), transparent 70%),
+                radial-gradient(ellipse 22% 10% at 8% 88%, rgba(214,180,100,.3), transparent 70%),
+                radial-gradient(ellipse at 30% 20%, #fbefc0, transparent 60%), linear-gradient(var(--paper), var(--paper-2));
+    box-shadow: inset 0 0 0 2px var(--paper-line), inset 0 0 18px rgba(170,120,40,.3); }
+  .win p { margin: 0 0 10px; font-size: 16px; line-height: 1.4; color: var(--ink); }
+  .win p.hello { margin: 0 0 12px; font-size: 20px; line-height: 1.2; color: var(--red-dark); letter-spacing: .2px; }
+  /* tabs and choices: the menus' planks, the chosen one gold */
+  .tabs { display: flex; gap: 12px; margin: 2px 0 6px; }
+  .tabs button, .guest, #menu button { all: unset; position: relative; box-sizing: border-box; cursor: pointer; padding: 5px 12px 3px; text-align: center; white-space: nowrap;
+    font: var(--title); font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: var(--straw); text-shadow: var(--ring);
+    background: linear-gradient(var(--plank-hi) 0 2px, var(--plank) 2px calc(100% - 3px), var(--plank-lip) calc(100% - 3px));
+    border: 2px solid var(--line); border-radius: 2px; box-shadow: 3px 3px 0 var(--edge), 3px 3px 0 2px var(--line); }
+  .tabs button:hover, .guest:hover, #menu button:hover { filter: brightness(1.12); }
+  .tabs button:active, .guest:active, #menu button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--edge), 1px 1px 0 2px var(--line); }
+  .tabs button[aria-pressed="true"], #menu button[aria-pressed="true"] { color: var(--white); background: var(--gold); }
+  .tabs button:focus-visible, .guest:focus-visible, #menu button:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
+  .field { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; font-size: 18px; line-height: 1.2; color: var(--ink); }
+  .field small { font-size: 15px; color: var(--ink-soft); margin-left: 4px; }
+  .field input { font: 19px var(--body); color: var(--ink); background: #fffbea; padding: 5px 9px 4px; border-radius: 3px;
+    border: 2px solid var(--plank); box-shadow: inset 0 2px 0 rgba(138,98,42,.18); }
+  .field input:hover { border-color: var(--edge); }
+  /* the chosen field: a dark rim and the gold of the chosen plank around it (the label stays as it is) */
+  .field input:focus { outline: 0; background: #fff; border-color: var(--line); box-shadow: inset 0 2px 0 rgba(138,98,42,.18), 0 0 0 3px #fbb800; }
+  /* the browser's autofill keeps the page's colors (the page is dark elsewhere) */
+  #login, #picker, #preload { color-scheme: light; }
+  .field input:-webkit-autofill, .field input:autofill { -webkit-text-fill-color: var(--ink); caret-color: var(--ink);
+    -webkit-box-shadow: 0 0 0 40px #fffbea inset; box-shadow: 0 0 0 40px #fffbea inset; transition: background-color 99999s; }
+  .field input:-webkit-autofill:focus, .field input:autofill:focus { -webkit-box-shadow: 0 0 0 40px #fff inset, 0 0 0 3px #fbb800;
+    box-shadow: 0 0 0 40px #fff inset, 0 0 0 3px #fbb800; }
+  .check { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; font-size: 15px; color: var(--ink); }
+  .check input { margin-top: 2px; accent-color: var(--edge); }
+  #login .error { color: var(--red-dark); font-size: 17px; margin: 10px 0 8px; }
+  #login .error:empty { margin: 14px 0 0; }
+  /* the main button: the menus' chosen item (a gold plank, white carved letters) */
+  .go { all: unset; position: relative; cursor: pointer; padding: 7px 20px 5px; border-radius: 2px;
+    font: var(--title); font-size: 23px; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--white); text-shadow: var(--ring); background: var(--gold); border: 2px solid var(--line);
+    box-shadow: 4px 4px 0 var(--edge), 4px 4px 0 2px var(--line), 0 8px 14px rgba(60,30,8,.3); }
+  .go:hover { filter: brightness(1.06); }
+  .go:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--edge), 1px 1px 0 2px var(--line); }
+  .go:focus-visible { outline: 3px solid var(--focus); outline-offset: 5px; }
+  .go:disabled { filter: grayscale(.6) brightness(.95); cursor: default; }
+  .actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  #login .actions { justify-content: center; }
+  /* the bottom line: a word on the left, the button hints on the right (the game's slate circles) */
+  .tip { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: nowrap;
+    margin: 16px 0 0 !important; padding-top: 9px; border-top: 2px dashed rgba(138,98,42,.45); font-size: 14px !important; line-height: 1.3 !important;
+    color: var(--ink-soft) !important; }
+  .tip > span:first-child { min-width: 0; }
+  .tip.center { justify-content: center; text-align: center; }
+  .k { display: inline-grid; place-items: center; width: 21px; height: 21px; box-sizing: border-box; margin: 0 3px 0 0; vertical-align: -5px;
+    border-radius: 50%; border: 1.5px solid #141414; background: radial-gradient(circle at 40% 30%, #6d797f, #4f5a60 55%, #3a4448);
+    font: 700 12px/1 system-ui, sans-serif; color: #fff; }
+  .hints { flex: none; display: inline-flex; align-items: center; white-space: nowrap; color: var(--ink); font-size: 16px; }
+  .hints .k { vertical-align: 0; }
+  .hints .k + span + .k { margin-left: 6px; }
+  /* what the server offers: two lanterns on a dark plank */
+  .leds { display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: center; font-size: 16px; color: var(--cream); margin-top: 4px;
+    padding: 4px 14px 3px; border-radius: 2px; background: linear-gradient(#523b1e 0 2px, var(--tab) 2px calc(100% - 3px), var(--tab-lip) calc(100% - 3px));
+    border: 2px solid var(--tab-line); text-shadow: 1px 1px 0 #1a1208; box-shadow: 3px 3px 0 var(--tab-line), 0 5px 10px rgba(60,30,8,.3); }
+  .leds span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0;
+    background: radial-gradient(circle at 35% 35%, #fff 0 20%, #7d6a55 60%); box-shadow: 0 0 0 1px rgba(0,0,0,.4); }
+  .leds span.on::before { background: radial-gradient(circle at 35% 35%, #fff 0 20%, #fbb800 60%); box-shadow: 0 0 7px #ffd84d, 0 0 0 1px rgba(0,0,0,.4); }
+  .fine { font-size: 14px; line-height: 1.3; color: var(--ink); text-align: center; max-width: 420px; margin: 0; padding: 4px 12px; border-radius: 3px;
+    background: rgba(245,228,166,.9); border: 1px solid rgba(176,138,74,.6); box-shadow: 0 2px 6px rgba(60,30,8,.2); }
+  #login.new .login-only, #login:not(.new) .new-only { display: none; }
+
+  /* ---- Settings: the same window as the sign-in screen */
   #menu { position: fixed; inset: 0; display: none; place-items: center; padding: 16px; z-index: 3; color-scheme: light;
-          background: rgba(40, 20, 6, .55); font-family: var(--body); color: var(--ink); }
+          background: rgba(40, 24, 6, .55); font-family: var(--body); color: var(--ink); }
   #menu.open { display: grid; }
   #menu .win { width: min(680px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
-  #menu .bar h1 { flex: 1; margin: 0; font: var(--title); font-size: 19px; letter-spacing: .5px; }
-  #menu .bar #close { font-size: 12px; padding: 4px 12px; }
-  #menu .body { overflow: auto; padding: 12px 20px 18px; }
-  #menu .hint { margin: 0 0 4px; font-size: 12px; color: var(--ink-soft); }
-  /* section titles: little wooden signs */
-  #menu h2 { display: flex; justify-content: space-between; align-items: center; margin: 18px 0 4px; padding: 5px 12px;
-             font: var(--title); font-size: 15px; letter-spacing: .6px; text-transform: uppercase; color: var(--mint);
-             text-shadow: 0 1px 0 #10220a, 0 0 2px #10220a; border-radius: 4px; border: 2px solid var(--wood-dark);
-             background: linear-gradient(var(--wood-light), var(--wood) 60%, #5a3112); box-shadow: inset 0 1px 0 rgba(255,220,160,.35), 0 2px 0 rgba(58,31,11,.35); }
-  #menu .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 4px;
-               border-top: 1px dashed rgba(122,86,48,.45); font-size: 13px; }
+  #menu .bar h1 { flex: 0 1 auto; margin: 0 auto 0 0; }
+  #menu .bar #close { flex: none; font-size: 15px; padding: 4px 12px 2px; }
+  #menu .bar #close:focus-visible { outline-color: var(--straw); }
+  #menu .body { overflow: auto; padding: 10px 20px 16px; scrollbar-color: var(--plank) var(--paper-2); }
+  #menu .hint { margin: 0 0 4px; font-size: 15px; line-height: 1.45; color: var(--ink-soft); }
+  #menu .hint .k { width: 19px; height: 19px; font-size: 11px; vertical-align: -4px; }
+  #menu .hint .nw { white-space: nowrap; }
+  /* section titles: the dark plank of the menus' titles */
+  #menu h2 { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 18px 4px 6px 0; padding: 5px 12px 3px;
+             font: var(--title); font-size: 17px; letter-spacing: .07em; text-transform: uppercase; color: var(--cream); text-shadow: 2px 2px 0 #1a1208;
+             background: linear-gradient(90deg, var(--tab-hi) 0 3px, transparent 3px), linear-gradient(#523b1e 0 2px, var(--tab) 2px calc(100% - 3px), var(--tab-lip) calc(100% - 3px));
+             border: 2px solid var(--tab-line); border-radius: 2px; box-shadow: 4px 4px 0 var(--tab-line); }
+  #menu .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 4px;
+               border-top: 2px dashed rgba(138,98,42,.35); font-size: 17px; line-height: 1.25; }
   #menu .row:first-of-type, #menu h2 + .row { border-top: 0; }
-  #menu .row > span { min-width: 0; font-weight: bold; color: var(--ink); }
-  #menu .sub { font-weight: normal; font-size: 11px; color: var(--ink-soft); }
-  #menu .seg { display: flex; flex-wrap: nowrap; flex: none; gap: 4px; justify-content: flex-end; }
-  /* buttons: wooden pills; a switch that is on, or a picked option, turns the menus' gold */
-  #menu button { all: unset; box-sizing: border-box; cursor: pointer; padding: 5px 14px; border-radius: 14px; text-align: center;
-                 white-space: nowrap; font: bold 12px var(--body); color: var(--paper);
-                 background: linear-gradient(var(--wood-light), var(--wood)); border: 2px solid var(--wood-dark);
-                 text-shadow: 0 1px 0 var(--wood-dark); box-shadow: inset 0 1px 0 rgba(255,220,160,.35), 0 2px 0 var(--wood-dark); }
-  #menu button:hover { background: linear-gradient(#a8692f, var(--wood-light)); }
-  #menu button:active { transform: translateY(1px); box-shadow: inset 0 1px 0 rgba(255,220,160,.35), 0 1px 0 var(--wood-dark); }
-  #menu button:focus-visible { outline: 3px solid var(--gold-2); outline-offset: 2px; }
-  #menu button[aria-pressed="true"] { color: var(--ink); text-shadow: 0 1px 0 rgba(255,255,255,.5); border-color: var(--wood-dark);
-    background: linear-gradient(var(--gold-1), var(--gold-2) 45%, var(--gold-3)); box-shadow: inset 0 1px 0 #fff8d0, 0 2px 0 var(--wood-dark); }
-  #menu button[aria-pressed="true"]:hover { background: linear-gradient(#fff6c4, #ffdc5c 45%, #f6b02a); }
-  #menu button.bind { min-width: 150px; padding: 4px 10px; border-radius: 4px; font: 13px Verdana, Tahoma, sans-serif; color: var(--ink);
-    background: #fffaf0; border: 2px solid; border-color: #9b7446 #e6cf9c #e6cf9c #9b7446; box-shadow: none; text-shadow: none; }
-  #menu button.bind:hover { border-color: var(--trim-dark) #f0d8a6 #f0d8a6 var(--trim-dark); background: #fff; }
-  #menu button.bind.waiting { background: #fff3c4; border-color: var(--trim); color: var(--red-dark); font-weight: bold; }
-  #menu button.link { padding: 0 2px; border: 0; background: none; box-shadow: none; border-radius: 0; font-weight: normal;
-    color: var(--gold-1); text-decoration: underline; text-shadow: 0 1px 0 var(--wood-dark); font-style: normal; letter-spacing: 0; text-transform: none; }
-  #menu button.link:hover { color: #fff; background: none; }
-  #menu .vol { display: flex; align-items: center; gap: 6px; }
-  #menu .vol button { padding: 3px 10px; }
-  #menu .vol input[type=range] { width: 150px; accent-color: var(--trim); cursor: pointer; }
-  #menu .vol .val { min-width: 40px; text-align: right; font-weight: bold; color: var(--ink); }
+  #menu .row > span { min-width: 0; color: var(--ink); }
+  #menu .sub { font-size: 14px; line-height: 1.3; color: var(--ink-soft); }
+  #menu .seg { display: flex; flex-wrap: nowrap; flex: none; gap: 9px; justify-content: flex-end; padding: 0 3px 3px 0; }
+  #menu .row > button { margin: 0 3px 3px 0; }
+  #menu button.bind { min-width: 150px; padding: 3px 10px 2px; border-radius: 3px; font: 17px var(--body); letter-spacing: 0; text-transform: none; color: var(--ink);
+    text-shadow: none; background: #fffbea; border: 2px solid var(--plank); box-shadow: inset 0 2px 0 rgba(138,98,42,.18); filter: none; }
+  #menu button.bind:hover { border-color: var(--edge); background: #fff; }
+  #menu button.bind:active { transform: none; }
+  #menu button.bind.waiting { background: #fff3c4; border-color: var(--line); color: var(--red-dark); box-shadow: 0 0 0 3px #fbb800; }
+  #menu button.link { padding: 0 2px; border: 0; background: none; box-shadow: none; border-radius: 0; font: 15px var(--body); letter-spacing: 0;
+    text-transform: none; color: var(--straw); text-decoration: underline; text-shadow: 1px 1px 0 #1a1208; }
+  #menu button.link:hover { color: #fff; filter: none; }
+  #menu button.link:active { transform: none; }
+  #menu button.link:focus-visible { outline-color: var(--straw); outline-offset: 2px; }
+  #menu .vol { display: flex; align-items: center; gap: 8px; padding: 0 3px 3px 0; }
+  #menu .vol button { padding: 2px 10px 0; font-size: 18px; }
+  #menu .vol input[type=range] { width: 150px; accent-color: var(--edge); cursor: pointer; }
+  #menu .vol .val { min-width: 40px; text-align: right; color: var(--ink); }
   #menu .grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; }
   #menu .grid .row:nth-child(2) { border-top: 0; }
-  @media (max-width: 560px) { #menu .grid { grid-template-columns: 1fr; } #menu .grid .row:nth-child(2) { border-top: 1px dashed rgba(122,86,48,.45); } }
+  @media (max-width: 560px) { #menu .grid { grid-template-columns: 1fr; } #menu .grid .row:nth-child(2) { border-top: 2px dashed rgba(138,98,42,.35); } }
 
   /* ---- Who plays (and the ISO picker): the kingdom's storybook. One player per window, each with
      their own save (serve_web.py accounts). The menus' sunburst behind it all comes from the
      player's own ISO (serve_web.py /art/; a drawn sunburst until then, or without it); the
      wallpaper on the side (with the game's logo in it) is the site's own picture. */
   .sky { overflow: hidden; background: url(art/backdrop.png) center / cover no-repeat fixed,
-           repeating-conic-gradient(from 0deg at 50% 38%, #fdeeb0 0 12deg, #f7d98a 12deg 24deg) fixed, #f7d98a; }
+           repeating-conic-gradient(from 0deg at 50% 38%, #fff0a4 0 12deg, #fdd88a 12deg 24deg) fixed, #fdd88a; }
   .sky::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
     background: radial-gradient(ellipse at 50% 40%, transparent 45%, rgba(122,70,20,.28)); }
 
@@ -124,115 +224,39 @@
     -webkit-mask-image: linear-gradient(to right, transparent, #000 22%); mask-image: linear-gradient(to right, transparent, #000 22%);
     z-index: 1; }
   #login .side, #preload .side { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; padding: 24px;
-    box-sizing: border-box; min-height: 100vh; justify-content: safe center; gap: 10px; }
+    box-sizing: border-box; min-height: 100vh; justify-content: safe center; gap: 12px; }
   #login .logo-side, #preload .logo-side { justify-content: flex-start; padding-top: max(24px, 6vh); }
   #login-art ~ .logo-side .wordmark, #preload-art ~ .logo-side .wordmark { display: none; }  /* only without the wallpaper */
-  .wordmark { font: italic 900 54px/0.95 "Bahnschrift Condensed", "Arial Narrow", Impact, sans-serif; letter-spacing: 1px; color: var(--gold-2);
-    -webkit-text-stroke: 3px var(--wood-dark); paint-order: stroke fill; text-shadow: 0 5px 0 var(--red-dark), 0 8px 14px rgba(0,0,0,.25);
+  .wordmark { font: 400 58px/0.95 "Germania One", "Arial Narrow", Impact, sans-serif; letter-spacing: 2px; color: var(--straw);
+    -webkit-text-stroke: 3px var(--tab-line); paint-order: stroke fill; text-shadow: 0 5px 0 var(--edge), 0 8px 14px rgba(0,0,0,.25);
     margin: 18px 0 10px; text-align: center; text-transform: uppercase; }
-  .wordmark small { display: block; margin-top: 6px; font-size: 22px; -webkit-text-stroke: 2px var(--wood-dark); color: #fff6dc;
-    text-shadow: 0 3px 0 var(--wood); letter-spacing: 3px; }
-
-  /* a dialog of the game: parchment in a dark wooden frame with the orange zigzag trim */
-  .win { position: relative; width: min(420px, 100%); box-sizing: border-box; border-radius: 6px; text-align: left;
-    background: var(--wood); border: 3px solid var(--wood-dark); padding: 7px;
-    box-shadow: inset 0 0 0 1px rgba(255,210,150,.25), 0 10px 30px rgba(60,30,8,.45); }
-  .win::before { content: ""; position: absolute; inset: 2px; border-radius: 3px; pointer-events: none;
-    background: repeating-linear-gradient(135deg, transparent 0 5px, rgba(232,137,43,.55) 5px 7px, transparent 7px 12px),
-                repeating-linear-gradient(45deg, transparent 0 5px, rgba(232,137,43,.55) 5px 7px, transparent 7px 12px);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
-    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); padding: 4px; }
-  .win .bar { position: relative; padding: 6px 12px 9px; color: var(--mint); font: var(--title); font-size: 19px; letter-spacing: .7px;
-    text-transform: uppercase; text-shadow: 0 2px 0 #10220a, 0 0 2px #10220a; display: flex; align-items: center; gap: 9px; }
-  /* the cherry on the cake: the window's little mark */
-  .win .bar .ball { width: 13px; height: 13px; border-radius: 50%; flex: none; position: relative;
-    background: radial-gradient(circle at 35% 30%, #ffd0c8 0 18%, #e2342a 45%, #8e1510); box-shadow: 0 1px 1px rgba(0,0,0,.45); }
-  .win .bar .ball::before { content: ""; position: absolute; left: 6px; top: -7px; width: 7px; height: 8px; border-left: 2px solid #4f2a0c;
-    border-top: 2px solid #4f2a0c; border-radius: 9px 0 0 0; transform: rotate(18deg); }
-  .win .body { position: relative; padding: 14px 18px 16px; border-radius: 3px; color: var(--ink);
-    background: radial-gradient(ellipse at 30% 20%, #fff6d4, transparent 60%), linear-gradient(var(--paper), var(--paper-2));
-    box-shadow: inset 0 0 0 2px #e2bf72, inset 0 0 18px rgba(170,110,40,.35); }
-  .win p { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: var(--ink); }
-  .win p.hello { margin: 0 0 12px; font: italic 800 18px/1.2 "Bahnschrift Condensed", "Arial Narrow", Impact, sans-serif; color: var(--red);
-    text-shadow: 0 1px 0 #fff3cf; letter-spacing: .3px; }
-  .tabs { display: flex; gap: 4px; margin: 0 0 4px; border-bottom: 3px solid var(--wood); }
-  .tabs button { all: unset; cursor: pointer; padding: 6px 14px 4px; border-radius: 6px 6px 0 0; font: bold 13px var(--body);
-    color: var(--paper); background: linear-gradient(var(--wood-light), var(--wood)); border: 2px solid var(--wood-dark); border-bottom: 0;
-    text-shadow: 0 1px 0 var(--wood-dark); }
-  .tabs button:not([aria-pressed="true"]):hover { background: linear-gradient(#a8692f, var(--wood-light)); }
-  .tabs button[aria-pressed="true"] { color: var(--ink); background: linear-gradient(var(--gold-1), var(--gold-2)); text-shadow: none; }
-  .tabs button:focus-visible { outline: 3px solid var(--gold-2); outline-offset: 2px; }
-  .field { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; font-size: 12px; font-weight: bold; color: var(--ink); }
-  .field small { font-weight: normal; color: var(--ink-soft); margin-left: 4px; }
-  .field input { font: 15px Verdana, Tahoma, sans-serif; color: var(--ink); background: #fffaf0; padding: 6px 8px; border-radius: 4px;
-    border: 2px solid; border-color: #9b7446 #e6cf9c #e6cf9c #9b7446; }
-  .field input:hover { border-color: var(--trim-dark) #f0d8a6 #f0d8a6 var(--trim-dark); }
-  .field input:focus { outline: 0; background: #fff; border-color: var(--trim); box-shadow: 0 0 0 3px rgba(232,137,43,.3); }
-  /* the browser's autofill keeps the page's colors (the page is dark elsewhere) */
-  #login, #picker, #preload { color-scheme: light; }
-  .field input:-webkit-autofill, .field input:autofill { -webkit-text-fill-color: var(--ink); caret-color: var(--ink);
-    -webkit-box-shadow: 0 0 0 40px #fffaf0 inset; box-shadow: 0 0 0 40px #fffaf0 inset; transition: background-color 99999s; }
-  .field input:-webkit-autofill:focus, .field input:autofill:focus { -webkit-box-shadow: 0 0 0 40px #fff inset, 0 0 0 3px rgba(232,137,43,.3);
-    box-shadow: 0 0 0 40px #fff inset, 0 0 0 3px rgba(232,137,43,.3); }
-  .check { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; font-size: 12px; color: var(--ink); }
-  .check input { margin-top: 2px; accent-color: var(--trim); }
-  #login .error { color: var(--red-dark); font-size: 13px; font-weight: bold; margin: 10px 0 8px; }
-  #login .error:empty { margin: 14px 0 0; }
-  /* the main button: the menus' chosen item (gold, in a dark outline, a slice of cake beside it) */
-  .go { all: unset; position: relative; cursor: pointer; padding: 8px 16px; border-radius: 8px;
-    font: italic 800 18px/1.1 "Bahnschrift Condensed", "Arial Narrow", Impact, sans-serif; letter-spacing: .6px; text-transform: uppercase;
-    color: var(--ink); text-shadow: 0 1px 0 rgba(255,255,255,.55);
-    background: linear-gradient(var(--gold-1), var(--gold-2) 45%, var(--gold-3)); border: 3px solid var(--wood-dark);
-    box-shadow: inset 0 2px 0 #fff8d0, 0 4px 0 var(--wood-dark), 0 6px 12px rgba(60,30,8,.3); }
-  .go:hover { background: linear-gradient(#fff6c4, #ffdc5c 45%, #f6b02a);
-    box-shadow: inset 0 2px 0 #fff8d0, 0 4px 0 var(--wood-dark), 0 0 16px rgba(255,210,63,.8); }
-  .go:active { transform: translateY(3px); box-shadow: inset 0 2px 0 #fff8d0, 0 1px 0 var(--wood-dark); }
-  .go:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
-  .go:disabled { background: linear-gradient(#e9e0bd, #cdbb88 50%, #b9a674); cursor: default; }
-  .actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-  /* the other buttons: the dialogs' wooden YES / NO */
-  .guest { all: unset; cursor: pointer; padding: 6px 14px; border-radius: 14px; font: bold 12px var(--body); color: var(--paper);
-    background: linear-gradient(var(--wood-light), var(--wood)); border: 2px solid var(--wood-dark); text-shadow: 0 1px 0 var(--wood-dark);
-    box-shadow: inset 0 1px 0 rgba(255,220,160,.35), 0 2px 0 var(--wood-dark); }
-  .guest:hover { background: linear-gradient(#a8692f, var(--wood-light)); }
-  .guest:active { transform: translateY(1px); box-shadow: inset 0 1px 0 rgba(255,220,160,.35), 0 1px 0 var(--wood-dark); }
-  .guest:focus-visible { outline: 3px solid var(--gold-2); outline-offset: 2px; }
-  .tip { margin: 16px 0 0 !important; padding-top: 10px; border-top: 1px dashed rgba(122,86,48,.5); font-size: 11px !important; color: var(--ink-soft) !important; text-align: center; }
-  /* what the server offers: two lanterns on a little sign */
-  .leds { display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: center; font-size: 12px; font-weight: bold; color: var(--paper); margin-top: 4px;
-    padding: 5px 14px; border-radius: 6px; background: linear-gradient(var(--wood-light), var(--wood)); border: 2px solid var(--wood-dark);
-    text-shadow: 0 1px 0 var(--wood-dark); box-shadow: 0 3px 8px rgba(60,30,8,.3); }
-  .leds span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px;
-    background: radial-gradient(circle at 35% 35%, #fff 0 20%, #7d6a55 60%); box-shadow: 0 0 0 1px rgba(0,0,0,.4); }
-  .leds span.on::before { background: radial-gradient(circle at 35% 35%, #fff 0 20%, #ffcc33 60%); box-shadow: 0 0 7px #ffd84d, 0 0 0 1px rgba(0,0,0,.4); }
-  .fine { font-size: 11px; color: var(--ink); text-align: center; max-width: 420px; margin: 0; padding: 4px 12px; border-radius: 6px;
-    background: rgba(255,246,214,.85); box-shadow: 0 2px 6px rgba(60,30,8,.2); }
-  #login.new .login-only, #login:not(.new) .new-only { display: none; }
+  .wordmark small { display: block; margin-top: 6px; font-size: 26px; -webkit-text-stroke: 2px var(--tab-line); color: var(--cream);
+    text-shadow: 0 3px 0 var(--tab); letter-spacing: 3px; }
 
   /* ---- First visit: the game comes to this browser (the ISO and the HD textures, kept here so the
      game never waits on the network), between the sign-in and the game. The bar is a cake being
      filled: frosting over sponge, a cherry riding its end. */
   #preload { position: fixed; inset: 0; display: none; z-index: 2; font-family: var(--body); color: var(--ink); overflow: hidden auto; }
   #preload.open { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .meter { position: relative; height: 28px; margin: 4px 0 8px; border-radius: 6px; overflow: hidden;
-    background: linear-gradient(#4a2810, #6b3d17); border: 3px solid var(--wood-dark);
-    box-shadow: inset 0 3px 6px rgba(0,0,0,.5), 0 1px 0 #fff6d4; }
-  .meter i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; overflow: hidden;
+  .meter { position: relative; height: 28px; margin: 4px 4px 10px 0; border-radius: 2px; overflow: hidden;
+    background: linear-gradient(#3a2a14, var(--tab)); border: 2px solid var(--line);
+    box-shadow: inset 0 3px 6px rgba(0,0,0,.5), 4px 4px 0 var(--edge), 4px 4px 0 2px var(--line); overflow: visible; }
+  .meter > i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; overflow: hidden;
     background: linear-gradient(#fffaf0 0 34%, #f3d08b 34% 62%, #8a4518 62% 70%, #f3d08b 70%);
     box-shadow: inset 0 1px 0 #fff, 0 0 12px rgba(255,230,160,.6); transition: width .4s ease-out; }
-  .meter i::before { content: ""; position: absolute; top: 0; left: -29px; right: 0; height: 34%;
+  .meter > i::before { content: ""; position: absolute; top: 0; left: -29px; right: 0; height: 34%;
     background: repeating-linear-gradient(-45deg, rgba(255,175,195,.55) 0 6px, transparent 6px 14px);
     animation: meter-run .7s linear infinite; }
   @keyframes meter-run { to { transform: translateX(19.8px); } }
   .meter .ball { position: absolute; top: 5px; left: 4px; width: 14px; height: 14px; border-radius: 50%; transition: left .4s ease-out;
     background: radial-gradient(circle at 35% 30%, #ffd0c8 0 18%, #e2342a 45%, #8e1510); box-shadow: 0 1px 2px rgba(0,0,0,.5); }
-  .meter span { position: absolute; inset: 0; display: grid; place-items: center; font: italic 800 15px "Bahnschrift Condensed", "Arial Narrow", Impact, sans-serif;
-    color: #fff; text-shadow: 0 1px 0 var(--wood-dark), 0 0 4px rgba(0,0,0,.8); letter-spacing: .5px; }
-  .pre-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; font-weight: bold; color: var(--ink); }
-  .pre-row span:last-child { color: var(--ink-soft); font-weight: normal; }
-  #pre-eta { margin: 6px 0 14px; font-size: 12px; color: var(--ink-soft); min-height: 1.2em; }
-  .pre-note { font-size: 12px; color: var(--ink); }
-  @media (prefers-reduced-motion: reduce) { .meter i::before { animation: none; } .meter i, .meter .ball { transition: none; } }
+  .meter span { position: absolute; inset: 0; display: grid; place-items: center; font: var(--title); font-size: 18px; letter-spacing: .06em;
+    color: #fff; text-shadow: var(--ring); }
+  .pre-row { display: flex; justify-content: space-between; gap: 10px; font-size: 16px; color: var(--ink); }
+  .pre-row span:last-child { color: var(--ink-soft); }
+  #pre-eta { margin: 6px 0 14px; font-size: 15px; color: var(--ink-soft); min-height: 1.2em; }
+  .pre-note { font-size: 15px; color: var(--ink); }
+  @media (prefers-reduced-motion: reduce) { .meter > i::before { animation: none; } .meter > i, .meter .ball { transition: none; } }
 
   /* ---- Phones and tablets: the picture, the logo and a note */
   #mobile { display: none; }
@@ -241,11 +265,11 @@
   html.mobile #mobile { display: grid; position: fixed; inset: 0; z-index: 4; place-items: center; padding: 16px; overflow: auto;
     font-family: var(--body); color: var(--ink); color-scheme: light; }
   #mobile .mwrap { position: relative; z-index: 1; width: min(420px, 100%); display: flex; flex-direction: column; align-items: center; gap: 14px; }
-  #mobile .mlogo { width: 100%; height: auto; display: block; border-radius: 8px; border: 3px solid var(--wood-dark);
-    box-shadow: 0 4px 0 var(--wood-dark), 0 10px 22px rgba(60,30,8,.3); }
+  #mobile .mlogo { width: 100%; height: auto; display: block; border-radius: 4px; border: 3px solid var(--tab-line);
+    box-shadow: 4px 5px 0 rgba(64,48,27,.55), 0 10px 22px rgba(60,30,8,.3); }
   #mobile .win { width: 100%; }
-  #mobile .body p { margin: 0; font-size: 15px; line-height: 1.5; }
-  #mobile .body p + p { margin-top: 10px; font-size: 12px; color: var(--ink-soft); }
+  #mobile .body p { margin: 0; font-size: 18px; line-height: 1.45; }
+  #mobile .body p + p { margin-top: 10px; font-size: 15px; color: var(--ink-soft); }
   /* Phones and narrow windows: the wallpaper (it has the logo) on top, the form under it. */
   @media (max-width: 820px) {
     #login.open, #preload.open { grid-template-columns: 1fr; align-content: start; }
@@ -253,11 +277,12 @@
     #login .logo-side, #preload .logo-side { order: -1; padding: 18px 16px 0; justify-content: flex-start; }
     #login-art ~ .logo-side, #preload-art ~ .logo-side { display: none; }
     #login .form-side, #preload .form-side { padding-bottom: 24px; }
-    .wordmark { font-size: 42px; margin: 8px 0 0; }
+    .wordmark { font-size: 44px; margin: 8px 0 0; }
     #login-art, #preload-art { position: relative; order: -1; justify-self: center; box-sizing: border-box; width: min(420px, calc(100% - 32px));
       height: auto; min-width: 0; max-width: none; margin-top: 16px; object-fit: contain; -webkit-mask-image: none; mask-image: none;
-      border-radius: 8px; border: 3px solid var(--wood-dark); box-shadow: 0 4px 0 var(--wood-dark), 0 10px 22px rgba(60,30,8,.3); }
+      border-radius: 4px; border: 3px solid var(--tab-line); box-shadow: 4px 5px 0 rgba(64,48,27,.55), 0 10px 22px rgba(60,30,8,.3); }
   }
+  @media (max-width: 400px) { .win .bar .title { font-size: 18px; letter-spacing: .04em; } .tip { font-size: 13px !important; } }
 </style>
 </head>
 <body>
@@ -265,7 +290,7 @@
   <div class="mwrap">
     <img class="mlogo" src="fat_wallpaper_hq.webp" alt="Fat Princess: Fistful of Cake" onerror="this.remove()">
     <div class="win">
-      <div class="bar"><span class="ball"></span><span id="mobile-title">Storm the castle on a computer!</span></div>
+      <div class="bar"><span class="ball"></span><span class="title" id="mobile-title">Storm the castle on a computer!</span></div>
       <div class="body">
         <p id="mobile-text">Fat Princess: Fistful of Cake plays on a computer: open this page on a desktop or a laptop, in Chrome, Edge or Firefox, with a keyboard or a gamepad.</p>
         <p>A fan-made port of the PSP game. Not affiliated with Sony.</p>
@@ -276,7 +301,7 @@
 <div id="stage"><canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas></div>
 <div id="picker" class="sky">
   <div class="win">
-    <div class="bar"><span class="ball"></span>Insert your UMD</div>
+    <div class="bar"><span class="ball"></span><span class="title">Insert your UMD</span></div>
     <div class="body" style="text-align:center">
       <p>Choose your Fat Princess: Fistful of Cake (USA) ISO (UCUS-98740). The browser reads it right here: it is not sent anywhere.</p>
       <label class="go">Open ISO<input type="file" id="iso" accept=".iso"></label>
@@ -287,17 +312,15 @@
   <img id="login-art" src="fat_wallpaper_hq.webp" alt="Fat Princess: Fistful of Cake" onerror="this.remove()">
   <div class="side form-side">
     <form class="win" id="login-form" novalidate>
-      <div class="bar"><span class="ball"></span><span id="login-title">Hear ye, hear ye!</span></div>
+      <div class="bar"><span class="ball"></span><span class="title" id="login-title">Cake Please!</span></div>
       <div class="body">
-        <p class="hello">Grab a hat: the princess won't rescue herself!</p>
         <div class="tabs"><button type="button" id="tab-login" aria-pressed="true">Log in</button><button type="button" id="tab-new" aria-pressed="false">New player</button></div>
         <label class="field"><span>Player name <small>(up to 10 letters or digits)</small></span><input id="l-name" autocomplete="username" maxlength="10" spellcheck="false"></label>
         <label class="field">Password<input id="l-pass" type="password" autocomplete="current-password"></label>
         <label class="field new-only">Password again<input id="l-pass2" type="password" autocomplete="new-password"></label>
         <p class="error" id="l-error" role="alert"></p>
-        <div class="actions"><button type="submit" class="go" id="l-submit">Log in &amp; play!</button>
-          <button type="button" class="guest" id="l-guest">Play without an account</button></div>
-        <p class="tip">Based on the PSP version: Fat Princess: Fistful of Cake (2010).</p>
+        <div class="actions"><button type="submit" class="go" id="l-submit">Log in &amp; play!</button></div>
+        <p class="tip"><span>Based on Fat Princess: Fistful of Cake (PSP, 2010).</span><span class="hints"><b class="k" aria-hidden="true">⏎</b><span>OK</span></span></p>
       </div>
     </form>
     <div class="leds" aria-live="polite"><span id="led-net">Network play</span><span id="led-hd">HD textures</span></div>
@@ -311,7 +334,7 @@
   <img id="preload-art" src="fat_wallpaper_hq.webp" alt="" onerror="this.remove()">
   <div class="side form-side">
     <div class="win">
-      <div class="bar"><span class="ball"></span><span id="pre-title">Baking the cake…</span></div>
+      <div class="bar"><span class="ball"></span><span class="title" id="pre-title">Baking the cake…</span></div>
       <div class="body">
         <p class="hello">First visit: the kingdom moves into this browser!</p>
         <div class="meter" id="pre-meter" role="progressbar" aria-labelledby="pre-title" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -320,7 +343,7 @@
         <p id="pre-eta">Connecting…</p>
         <div class="actions"><span class="pre-note">Next time the game starts right away.</span>
           <button type="button" class="guest" id="pre-skip">Play now</button></div>
-        <p class="tip">Play now skips the rest: what is missing loads while you play, and the rest comes next time.</p>
+        <p class="tip center">Play now: the rest loads as you play, or next time.</p>
       </div>
     </div>
     <p class="fine">Kept in this browser, so the game never waits for the network.</p>
@@ -344,9 +367,9 @@
 </button>
 <div id="menu" role="dialog" aria-modal="true" aria-labelledby="menu-title">
   <div class="win">
-    <div class="bar"><span class="ball"></span><h1 id="menu-title">Settings</h1><button id="close">Back to the game</button></div>
+    <div class="bar"><span class="ball"></span><h1 class="title" id="menu-title">Settings</h1><button id="close">Back to the game</button></div>
     <div class="body">
-    <p class="hint">Esc, the gear button or the gamepad's Home button open this menu. On a gamepad: the d-pad moves, ✕ selects, ◯ goes back.</p>
+    <p class="hint">Esc, the gear button or the gamepad's Home button open this menu. On a gamepad: the d-pad moves, <span class="nw"><b class="k">✕</b>selects,</span> <span class="nw"><b class="k">◯</b>goes back.</span></p>
 
     <h2>Player</h2>
     <div class="row"><span id="who">—</span><button id="switch">Switch player</button></div>
@@ -716,7 +739,6 @@ if (!window.fpMobile) {
       };
       document.getElementById('tab-login').addEventListener('click', () => mode(false));
       document.getElementById('tab-new').addEventListener('click', () => mode(true));
-      document.getElementById('l-guest').addEventListener('click', () => { writeSession({guest: true}); done(null); });
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const name = nameEl.value.trim(), password = passEl.value;
@@ -746,7 +768,7 @@ if (!window.fpMobile) {
       dressLogin();
     };
     const saved = readSession();
-    if ((saved && saved.guest) || new URLSearchParams(location.search).get('guest') === '1') return done(null);  // ?guest=1: tests
+    if (new URLSearchParams(location.search).get('guest') === '1') return done(null);  // ?guest=1: tests (no button: every player signs in)
     fetch('account/me', {headers: saved && saved.token ? {'X-FP-Session': saved.token} : {}}).then((r) => {
       if (r.ok) return r.json().then((j) => done({name: j.name, token: saved.token}));
       if (r.status === 401) return ask();

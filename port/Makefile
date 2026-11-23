@@ -61,13 +61,18 @@ WEB_EXTRA_FILES = $(if $(wildcard assets/fonts/*),--preload-file assets/fonts@/a
 	$(if $(wildcard generated/ui_text.spec),--preload-file generated/ui_text.spec@/generated/ui_text.spec)
 WEB_EXTRA_DEPS = $(wildcard assets/fonts/*) $(wildcard generated/ui_text.spec)
 
-web: build/web/index.html build/web/livekit-client.umd.js $(patsubst web/%,build/web/%,$(wildcard web/*.png web/*.webp))
+web: build/web/index.html build/web/livekit-client.umd.js $(patsubst web/%,build/web/%,$(wildcard web/*.png web/*.webp web/fonts/*))
 
 build/web/livekit-client.umd.js: web/livekit-client.umd.js | build/web
 	cp $< $@
 build/web/%.png: web/%.png | build/web
 	cp $< $@
 build/web/%.webp: web/%.webp | build/web
+	cp $< $@
+# the page's lettering (web/shell.html @font-face): Germania One for the menus' carved words, Patrick Hand
+# for the handwritten text (SIL OFL, web/fonts/*-OFL.txt)
+build/web/fonts/%: web/fonts/%
+	mkdir -p build/web/fonts
 	cp $< $@
 
 build/web/index.html: $(WGEN_OBJ) $(WRT_OBJ) $(WMOD_OBJ) web/shell.html web/audio.js web/net.js $(WEB_EXTRA_DEPS) | build/web
